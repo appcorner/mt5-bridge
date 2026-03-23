@@ -53,6 +53,7 @@ class Rate(BaseModel):
 
 class Tick(BaseModel):
     time: int
+    time_msc: int
     bid: float
     ask: float
     last: float
@@ -100,6 +101,7 @@ class Position(BaseModel):
     price_current: float
     profit: float
     time: int
+    time_msc: int
 
 async def monitor_connection():
     """Periodically check MT5 connection and reconnect if needed."""

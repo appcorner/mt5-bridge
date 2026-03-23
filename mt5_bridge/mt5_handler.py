@@ -284,6 +284,7 @@ class MT5Handler:
 
         return {
             "time": self._apply_time_correction(int(tick.time)),
+            "time_msc": int(tick.time_msc),
             "bid": float(tick.bid),
             "ask": float(tick.ask),
             "last": float(tick.last),
@@ -493,7 +494,8 @@ class MT5Handler:
                 "tp": float(pos.tp),
                 "price_current": float(pos.price_current),
                 "profit": float(pos.profit),
-                "time": self._apply_time_correction(int(pos.time))
+                "time": self._apply_time_correction(int(pos.time)),
+                "time_msc": int(getattr(pos, "time_msc", 0))
             })
             
         return result

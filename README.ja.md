@@ -7,7 +7,7 @@
 - **クライアント機能**: Windows、Linux、macOSなど任意のOSで動作し、サーバーと通信してデータの取得や注文を行います。
 
 ## 前提条件
-- Python 3.11以上
+- Python 3.11 - 3.12 (NumPy の互換性のため)
 - **サーバーモード**: MetaTrader 5ターミナルがインストールされたWindows環境。
 - **クライアントモード**: 任意のOS環境。
 
@@ -99,7 +99,7 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 modify 12345678 --sl 200
 - `GET /ticks_from/{symbol}?start=2025-01-01&count=1000&flags=ALL` (**v1.5.0~**)
 - `GET /ticks_range/{symbol}?start=2025-01-01&end=2025-01-02&flags=ALL` (**v1.5.0~**)
 - `GET /account`
-- `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456`
+- `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456` (**v1.7.0~** で `time_msc` を追加)
 - `POST /order`
 - `POST /close`
 - `POST /modify`

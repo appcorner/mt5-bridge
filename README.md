@@ -7,7 +7,7 @@
 - **Client**: Runs on any platform (Windows, Linux, macOS) and communicates with the Server to fetch data or execute trades.
 
 ## Prerequisites
-- Python 3.11+
+- Python 3.11 - 3.12 (NumPy compatibility)
 - **Server Mode**: Windows environment with MetaTrader 5 terminal installed.
 - **Client Mode**: Any OS.
 
@@ -111,7 +111,7 @@ You can also access the API directly via generic HTTP clients (curl, Postman, sp
 - `GET /ticks_from/{symbol}?start=2026-01-01&count=1000&flags=ALL` (**v1.5.0+**)
 - `GET /ticks_range/{symbol}?start=2026-01-01&end=2026-01-02&flags=ALL` (**v1.5.0+**)
 - `GET /account`
-- `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456`
+- `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456` (**v1.7.0+** now includes `time_msc`)
 - `POST /order`
 - `POST /close`
 - `POST /modify`

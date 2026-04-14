@@ -236,8 +236,8 @@ class MT5Handler:
             logger.error(f"Invalid timeframe: {timeframe_str}")
             return None
 
-        # copy_rates_range はサーバー時間を受け取ることを期待するため、
-        # UTC -> ServerTime の逆変換を適用する
+        # copy_rates_range expects server time, so apply the reverse
+        # conversion from UTC to server time here.
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -299,25 +299,25 @@ class MT5Handler:
         flags: str = "ALL"
     ) -> Optional[List[Dict]]:
         """
-        指定日時から指定件数の過去ティックデータを取得する。
-        
+        Retrieve a specified number of historical ticks starting from a given datetime.
+
         Args:
-            symbol: シンボル名 (例: "XAUUSD")
-            date_from: 開始日時 (datetime, UTC推奨)
-            count: 取得するティック数
-            flags: ティックの種類 ("ALL", "INFO", "TRADE")
-                   - ALL: すべてのティック
-                   - INFO: Bid/Ask変更のティック
-                   - TRADE: Last/Volume変更のティック
-            
+            symbol: Symbol name, for example "XAUUSD"
+            date_from: Start datetime, preferably in UTC
+            count: Number of ticks to retrieve
+            flags: Tick type ("ALL", "INFO", "TRADE")
+                   - ALL: all ticks
+                   - INFO: ticks with Bid/Ask changes
+                   - TRADE: ticks with Last/Volume changes
+
         Returns:
-            ティックデータの辞書リスト、またはエラー時None
+            A list of tick data dictionaries, or None if an error occurs
         """
         if not self.connected:
             if not self.initialize():
                 return None
         
-        # フラグのマッピング
+        # Map the public flag names to the MT5 constants.
         flag_map = {
             "ALL": mt5.COPY_TICKS_ALL,
             "INFO": mt5.COPY_TICKS_INFO,
@@ -325,7 +325,7 @@ class MT5Handler:
         }
         mt5_flags = flag_map.get(flags.upper(), mt5.COPY_TICKS_ALL)
         
-        # UTC -> ServerTime の逆変換を適用
+        # Apply the reverse conversion from UTC to server time.
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -342,17 +342,17 @@ class MT5Handler:
             logger.warning(f"No ticks returned for {symbol} from {date_from}")
             return []
         
-        # numpy配列を辞書リストに変換
+        # Convert the NumPy array into a list of dictionaries.
         result = []
         for tick in ticks:
             result.append({
                 "time": self._apply_time_correction(int(tick['time'])),
-                "time_msc": int(tick['time_msc']),  # ミリ秒精度のタイムスタンプ
+                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision
                 "bid": float(tick['bid']),
                 "ask": float(tick['ask']),
                 "last": float(tick['last']),
                 "volume": int(tick['volume']),
-                "flags": int(tick['flags']),  # ティック変更フラグ
+                "flags": int(tick['flags']),  # Tick change flags
             })
         
         return result
@@ -365,22 +365,22 @@ class MT5Handler:
         flags: str = "ALL"
     ) -> Optional[List[Dict]]:
         """
-        指定日時範囲の過去ティックデータを取得する。
-        
+        Retrieve historical tick data within the specified datetime range.
+
         Args:
-            symbol: シンボル名 (例: "XAUUSD")
-            date_from: 開始日時 (datetime, UTC推奨)
-            date_to: 終了日時 (datetime, UTC推奨)
-            flags: ティックの種類 ("ALL", "INFO", "TRADE")
-            
+            symbol: Symbol name, for example "XAUUSD"
+            date_from: Start datetime, preferably in UTC
+            date_to: End datetime, preferably in UTC
+            flags: Tick type ("ALL", "INFO", "TRADE")
+
         Returns:
-            ティックデータの辞書リスト、またはエラー時None
+            A list of tick data dictionaries, or None if an error occurs
         """
         if not self.connected:
             if not self.initialize():
                 return None
         
-        # フラグのマッピング
+        # Map the public flag names to the MT5 constants.
         flag_map = {
             "ALL": mt5.COPY_TICKS_ALL,
             "INFO": mt5.COPY_TICKS_INFO,
@@ -388,7 +388,7 @@ class MT5Handler:
         }
         mt5_flags = flag_map.get(flags.upper(), mt5.COPY_TICKS_ALL)
         
-        # UTC -> ServerTime の逆変換を適用
+        # Apply the reverse conversion from UTC to server time.
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -406,17 +406,17 @@ class MT5Handler:
             logger.warning(f"No ticks returned for {symbol} in range {date_from} to {date_to}")
             return []
         
-        # numpy配列を辞書リストに変換
+        # Convert the NumPy array into a list of dictionaries.
         result = []
         for tick in ticks:
             result.append({
                 "time": self._apply_time_correction(int(tick['time'])),
-                "time_msc": int(tick['time_msc']),  # ミリ秒精度のタイムスタンプ
+                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision
                 "bid": float(tick['bid']),
                 "ask": float(tick['ask']),
                 "last": float(tick['last']),
                 "volume": int(tick['volume']),
-                "flags": int(tick['flags']),  # ティック変更フラグ
+                "flags": int(tick['flags']),  # Tick change flags
             })
         
         return result
@@ -471,12 +471,12 @@ class MT5Handler:
             
         result = []
         for pos in positions:
-            # magic number フィルタ
+            # Apply the magic number filter.
             pos_magic = int(getattr(pos, "magic", 0))
             if magic is not None and pos_magic != magic:
                 continue
             
-            # symbol フィルタ
+            # Apply the symbol filter.
             pos_symbol = pos.symbol
             if symbols is not None and pos_symbol not in symbols:
                 continue
@@ -487,7 +487,8 @@ class MT5Handler:
                 "type": "BUY" if pos.type == mt5.ORDER_TYPE_BUY else "SELL",
                 "volume": float(pos.volume),
                 "price_open": float(pos.price_open),
-                # deep-trader 側で「自分のポジだけ」を安全に識別するために必要
+                # Preserve the original comment so downstream clients can safely
+                # identify positions that belong to them.
                 "comment": str(getattr(pos, "comment", "")),
                 "magic": pos_magic,
                 "sl": float(pos.sl),
@@ -526,13 +527,13 @@ class MT5Handler:
         """
         if not self.connected:
             if not self.initialize():
-                message = "MT5 に接続できませんでした"
+                message = "Failed to connect to MT5"
                 return None, message
                 
-        # Get current price for filling request
+        # Get the current price for the order request.
         tick = self.get_tick(symbol)
         if tick is None:
-            message = f"{symbol} のティック情報を取得できません"
+            message = f"Failed to get tick data for {symbol}"
             logger.error(message)
             return None, message
             
@@ -554,12 +555,13 @@ class MT5Handler:
             "type_time": mt5.ORDER_TIME_GTC,
         }
 
-        # filling の切り替えは「filling 起因の失敗」のときだけ行う。
-        # 例: Invalid stops(10016) は filling を変えても解決しないので、総当たりしない。
+        # Only switch the filling mode when the failure is clearly caused by
+        # the filling policy. For example, Invalid stops (10016) will not be
+        # fixed by trying every filling option.
         invalid_fill_retcode = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
 
-        # まずはデフォルト（type_filling未指定）を試し、
-        # 「Unsupported filling mode / Invalid filling」等の場合のみ filling を変えて再試行する。
+        # Try the default request first, then retry with alternative filling
+        # modes only for Unsupported/Invalid filling style errors.
         fillings = [
             None,
             mt5.ORDER_FILLING_IOC,
@@ -574,7 +576,8 @@ class MT5Handler:
             filling_label = "default" if filling is None else str(filling)
             result = mt5.order_send(request)
             if result is None:
-                # result=None は通信/端末側の問題の可能性が高く、filling を変えても改善しないことが多い
+                # When result is None, the issue is often related to terminal or
+                # communication state, so changing filling mode usually will not help.
                 error_code = mt5.last_error()
                 last_error = f"order_send returned None with filling={filling_label} (error={error_code}). Request: {request}"
                 logger.error(last_error)
@@ -582,15 +585,15 @@ class MT5Handler:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(f"Order sent successfully: {result.order} (filling={filling_label})")
                 return result.order, None
-            last_error = f"filling={filling_label} {result.retcode} で失敗: {result.comment}"
+            last_error = f"filling={filling_label} failed with retcode {result.retcode}: {result.comment}"
             logger.warning("Order send failed: %s", last_error)
 
-            # filling 起因の失敗（Unsupported/Invalid filling）のときだけ次の filling を試す。
-            # それ以外（例: Invalid stops）は即座に中断して返す。
+            # Only try the next filling mode for Unsupported/Invalid filling errors.
+            # For other failures, such as Invalid stops, stop immediately and return.
             if int(result.retcode) == int(invalid_fill_retcode) or "filling" in str(result.comment).lower():
                 continue
             break
-        message = last_error or "すべての filling モードで発注に失敗しました"
+        message = last_error or "Order placement failed for all tested filling modes"
         return None, message
 
     def close_position(self, ticket: int) -> tuple[bool, str]:
@@ -635,7 +638,7 @@ class MT5Handler:
             "type_time": mt5.ORDER_TIME_GTC,
         }
 
-        # filling の切り替えは「filling 起因の失敗」のときだけ行う。
+        # Only switch the filling mode when the failure is caused by the filling policy.
         invalid_fill_retcode = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
 
         fillings = [
@@ -659,11 +662,11 @@ class MT5Handler:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info("Position %s closed successfully (filling=%s)", ticket, filling_label)
                 return True, "Success"
-            last_error = f"filling={filling_label} {result.retcode} で失敗: {result.comment}"
+            last_error = f"filling={filling_label} failed with retcode {result.retcode}: {result.comment}"
             logger.warning("Close position failed: %s", last_error)
 
-            # filling 起因の失敗（Unsupported/Invalid filling）のときだけ次の filling を試す。
-            # それ以外（例: Invalid stops）は即座に中断して返す。
+            # Only try the next filling mode for Unsupported/Invalid filling errors.
+            # For other failures, such as Invalid stops, stop immediately and return.
             if int(result.retcode) == int(invalid_fill_retcode) or "filling" in str(result.comment).lower():
                 continue
             break

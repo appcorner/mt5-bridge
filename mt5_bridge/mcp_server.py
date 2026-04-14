@@ -15,10 +15,8 @@ BASE_URL = os.getenv("MT5_BRIDGE_BASE_URL", "http://localhost:8000")
 mcp = FastMCP(
     "mt5-bridge",
     instructions=(
-        #"Tools proxy the mt5-bridge FastAPI for chart data and trading. "
-        #"Set MT5_BRIDGE_BASE_URL if the API is not at http://localhost:8000."
-        "MT5を用いたチャートデータやポジション情報の取得、実際の取引注文を行います。"
-        "レートの取得やチャート分析が求められた場合などは必ずこのツールを使用してください。"
+        "Use this tool to retrieve MT5 chart data, inspect positions, and place live trading orders. "
+        "Always use it when rate retrieval or chart analysis is requested."
     ),
 )
 
@@ -29,7 +27,7 @@ def _request(
     json: Optional[Dict[str, Any]] = None,
     params: Optional[Dict[str, Any]] = None,
 ) -> Any:
-    # Single HTTP request wrapper with consistent error reporting / 一貫したエラーハンドリング付きのHTTPラッパー
+    # Single HTTP request wrapper with consistent error handling.
     try:
         with httpx.Client(base_url=BASE_URL, timeout=10.0) as client:
             response = client.request(method, path, json=json, params=params)
@@ -46,25 +44,25 @@ def _request(
 
 @mcp.tool()
 def health() -> Dict[str, Any]:
-    """Check MT5 Bridge health / ブリッジのヘルスを確認"""
+    """Check the health status of the MT5 Bridge."""
     return _request("GET", "/health")
 
 
 @mcp.tool()
 def get_rates(symbol: str, timeframe: str = "M1", count: int = 100) -> List[Dict[str, Any]]:
-    """Fetch OHLCV bars / OHLCVバーを取得"""
+    """Fetch OHLCV bars."""
     return _request("GET", f"/rates/{symbol}", params={"timeframe": timeframe, "count": count})
 
 
 @mcp.tool()
 def get_tick(symbol: str) -> Dict[str, Any]:
-    """Fetch latest tick / 最新ティックを取得"""
+    """Fetch the latest tick."""
     return _request("GET", f"/tick/{symbol}")
 
 
 @mcp.tool()
 def list_positions() -> List[Dict[str, Any]]:
-    """List open positions / オープンポジション一覧"""
+    """List open positions."""
     return _request("GET", "/positions")
 
 
@@ -77,14 +75,14 @@ def send_order(
     tp: float = 0.0,
     comment: str = "",
 ) -> Dict[str, Any]:
-    """Submit market order / 成行注文を送信"""
+    """Submit a market order."""
     payload = {"symbol": symbol, "type": side, "volume": volume, "sl": sl, "tp": tp, "comment": comment}
     return _request("POST", "/order", json=payload)
 
 
 @mcp.tool()
 def close_position(ticket: int) -> Dict[str, Any]:
-    """Close position by ticket / チケット指定で決済"""
+    """Close a position by ticket."""
     return _request("POST", "/close", json={"ticket": ticket})
 
 
@@ -96,7 +94,7 @@ def modify_position(
     update_sl: bool = False,
     update_tp: bool = False,
 ) -> Dict[str, Any]:
-    """Update SL/TP for a position / ポジションのSL/TPを更新"""
+    """Update SL/TP for a position."""
     payload = {"ticket": ticket, "sl": sl, "tp": tp, "update_sl": update_sl, "update_tp": update_tp}
     return _request("POST", "/modify", json=payload)
 
@@ -105,8 +103,7 @@ def modify_position(
 if __name__ == "__main__":
     import argparse
 
-    # Parse CLI args so operator can set API base URL and MCP listen address /
-    # APIベースURLとMCP待受アドレスをCLI引数で設定
+    # Parse CLI arguments so the operator can set the API base URL and MCP listen address.
     parser = argparse.ArgumentParser(description="Run MT5 Bridge MCP over HTTP")
     parser.add_argument("--http", action="store_true", help="Run MCP over HTTP (default: stdio)")
     parser.add_argument("--api-base", default=BASE_URL, help="MT5 Bridge API base URL (default: env MT5_BRIDGE_BASE_URL or http://localhost:8000)")
@@ -114,7 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8001, help="MCP listen port (default: 8001)")
     args = parser.parse_args()
 
-    # Override BASE_URL from CLI / CLI指定でBASE_URLを上書き
+    # Override BASE_URL from the CLI arguments.
     #global BASE_URL
     BASE_URL = args.api_base
 

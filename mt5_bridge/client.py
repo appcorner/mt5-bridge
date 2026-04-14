@@ -18,16 +18,16 @@ class BridgeClient:
 
     def get_rates_range(self, symbol: str, timeframe: str, start: int, end: int) -> List[Dict[str, Any]]:
         """
-        日付範囲を指定して履歴レートを取得する。
-        
+        Retrieve historical rates for a specified date range.
+
         Args:
-            symbol: シンボル名 (例: "XAUUSD")
-            timeframe: 時間足 (例: "M1", "H1")
-            start: 開始タイムスタンプ (UTC)
-            end: 終了タイムスタンプ (UTC)
-            
+            symbol: Symbol name, for example "XAUUSD"
+            timeframe: Timeframe, for example "M1" or "H1"
+            start: Start timestamp in UTC
+            end: End timestamp in UTC
+
         Returns:
-            レートデータの辞書リスト
+            A list of rate data dictionaries
         """
         url = f"{self.base_url}/rates_range/{symbol}"
         params = {"timeframe": timeframe, "start": start, "end": end}
@@ -47,21 +47,21 @@ class BridgeClient:
         flags: str = "ALL"
     ) -> List[Dict[str, Any]]:
         """
-        指定日時から過去ティックデータを取得する。
-        
+        Retrieve historical tick data starting from the specified datetime.
+
         Args:
-            symbol: シンボル名 (例: "XAUUSD")
-            start: 開始タイムスタンプ (UTC)
-            count: 取得するティック数
-            flags: ティックの種類 ("ALL", "INFO", "TRADE")
-            
+            symbol: Symbol name, for example "XAUUSD"
+            start: Start timestamp in UTC
+            count: Number of ticks to retrieve
+            flags: Tick type, one of "ALL", "INFO", or "TRADE"
+
         Returns:
-            ティックデータの辞書リスト
+            A list of tick data dictionaries
         """
         url = f"{self.base_url}/ticks_from/{symbol}"
         params = {"start": start, "count": count, "flags": flags}
         try:
-            # ティックデータは量が多い可能性があるためタイムアウトを長めに設定
+            # Use a longer timeout because tick responses can be large.
             resp = httpx.get(url, params=params, timeout=60.0)
             resp.raise_for_status()
             return resp.json()
@@ -77,21 +77,21 @@ class BridgeClient:
         flags: str = "ALL"
     ) -> List[Dict[str, Any]]:
         """
-        指定日時範囲の過去ティックデータを取得する。
-        
+        Retrieve historical tick data within the specified datetime range.
+
         Args:
-            symbol: シンボル名 (例: "XAUUSD")
-            start: 開始タイムスタンプ (UTC)
-            end: 終了タイムスタンプ (UTC)
-            flags: ティックの種類 ("ALL", "INFO", "TRADE")
-            
+            symbol: Symbol name, for example "XAUUSD"
+            start: Start timestamp in UTC
+            end: End timestamp in UTC
+            flags: Tick type, one of "ALL", "INFO", or "TRADE"
+
         Returns:
-            ティックデータの辞書リスト
+            A list of tick data dictionaries
         """
         url = f"{self.base_url}/ticks_range/{symbol}"
         params = {"start": start, "end": end, "flags": flags}
         try:
-            # ティックデータは量が多い可能性があるためタイムアウトを長めに設定
+            # Use a longer timeout because tick responses can be large.
             resp = httpx.get(url, params=params, timeout=120.0)
             resp.raise_for_status()
             return resp.json()

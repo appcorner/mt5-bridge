@@ -12,6 +12,7 @@ dependencies = [
     "pandas>=2.0.0",
     "fastmcp>=0.4.1",
     "MetaTrader5>=5.0.0; sys_platform == 'win32'",
+    "pyinstaller>=6.19.0",
 ]
 authors = [{ name = "Akiva Miura", email = "akiva.miura@gmail.com" }]
 
@@ -25,3 +26,8 @@ mt5-bridge = "mt5_bridge.main:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "nuitka>=4.0.8",
+]

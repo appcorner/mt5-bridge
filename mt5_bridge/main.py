@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timezone
 import pandas as pd
 from importlib.metadata import version, PackageNotFoundError
+from contextlib import asynccontextmanager
 
 # Try relative imports (package mode), fallback to path manipulation (script mode)
 try:
@@ -22,8 +23,34 @@ except ImportError:
     from mt5_bridge.mt5_handler import MT5Handler
     from mt5_bridge.client import BridgeClient
 
-app = FastAPI(title="MT5 Bridge API")
 mt5_handler = MT5Handler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage the startup and shutdown lifecycle for the MT5 connection."""
+    # Initialize MT5 only on Windows and keep background reconnection checks running.
+    if sys.platform == "win32":
+        if not mt5_handler.initialize():
+            print("WARNING: Failed to initialize MT5 on startup. Will retry in background.")
+
+        monitor_task = asyncio.create_task(monitor_connection())
+    else:
+        print("Non-Windows platform detected: MT5 connection disabled.")
+        monitor_task = None
+
+    try:
+        yield
+    finally:
+        # Stop the background monitor first, then close the MT5 session cleanly.
+        if monitor_task:
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+        mt5_handler.shutdown()
+
+app = FastAPI(title="MT5 Bridge API", lifespan=lifespan)
 
 def parse_datetime(val: str) -> int:
     """Parse a string as a unix timestamp or a datetime string."""
@@ -60,17 +87,17 @@ class Tick(BaseModel):
     volume: int
 
 class HistoricalTick(BaseModel):
-    """過去ティックデータのモデル（ミリ秒精度対応）"""
-    time: int              # 秒単位のタイムスタンプ (UTC)
-    time_msc: int          # ミリ秒単位のタイムスタンプ
+    """Historical tick data model with millisecond precision."""
+    time: int              # Timestamp in seconds (UTC)
+    time_msc: int          # Timestamp in milliseconds
     bid: float
     ask: float
     last: float
     volume: int
-    flags: int             # ティック変更フラグ (Bid/Ask/Last/Volumeの変更種別)
+    flags: int             # Tick change flags (Bid/Ask/Last/Volume updates)
 
 class BookItem(BaseModel):
-    """板情報のアイテムモデル"""
+    """Market depth item model."""
     type: str              # BUY, SELL, BUY_LIMIT, SELL_LIMIT, OTHER
     price: float
     volume: float
@@ -113,24 +140,6 @@ async def monitor_connection():
         except Exception as e:
             print(f"Error in connection monitor: {e}")
             await asyncio.sleep(5)
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize MT5 connection on startup."""
-    # Only try to initialize if we are on Windows (checked in main types, but safe here too)
-    if sys.platform == "win32":
-        if not mt5_handler.initialize():
-            print("WARNING: Failed to initialize MT5 on startup. Will retry in background.")
-        
-        # Start connection monitor
-        asyncio.create_task(monitor_connection())
-    else:
-        print("Non-Windows platform detected: MT5 connection disabled.")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Shutdown MT5 connection."""
-    mt5_handler.shutdown()
 
 @app.get("/health")
 def health_check():
@@ -189,9 +198,10 @@ def get_ticks_from(
     flags: str = Query("ALL", description="Tick type: ALL, INFO (bid/ask changes), TRADE (last/volume changes)")
 ):
     """
-    指定日時から過去ティックデータを取得する。
-    
-    秒スキャルピングの強化学習訓練データなどに使用。
+    Retrieve historical tick data starting from the specified datetime.
+
+    This can be used for workloads such as reinforcement learning training
+    data for short-term scalping strategies.
     """
     try:
         start_ts = parse_datetime(start)
@@ -212,10 +222,11 @@ def get_ticks_range(
     flags: str = Query("ALL", description="Tick type: ALL, INFO (bid/ask changes), TRADE (last/volume changes)")
 ):
     """
-    指定日時範囲の過去ティックデータを取得する。
-    
-    秒スキャルピングの強化学習訓練データなどに使用。
-    注意: 大量のティックデータを取得する場合は時間がかかる可能性があります。
+    Retrieve historical tick data within the specified datetime range.
+
+    This is useful for workflows such as reinforcement learning training
+    data for short-term scalping strategies.
+    Note: requests for large amounts of tick data may take some time.
     """
     try:
         start_ts = parse_datetime(start)
@@ -242,7 +253,7 @@ def get_positions(
     symbols: Optional[str] = Query(None, description="Comma-separated list of symbols to filter (e.g., 'XAUUSD,BTCUSD')"),
     magic: Optional[int] = Query(None, description="Magic number to filter positions by"),
 ):
-    # symbols パラメータがあればリストに変換
+    # Convert the symbols parameter to a list when provided.
     symbol_list = None
     if symbols:
         symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
@@ -358,7 +369,7 @@ def main():
     rates_p.add_argument("--timeframe", default="M1")
     rates_p.add_argument("--count", type=int, default=1000)
     
-    # 日付範囲指定でのレート取得コマンド
+    # Command for retrieving historical rates by date range.
     rates_range_p = client_subs.add_parser("rates_range", help="Get historical rates by date range")
     rates_range_p.add_argument("symbol", type=str)
     rates_range_p.add_argument("--timeframe", default="M1", help="Timeframe (e.g. M1, H1)")

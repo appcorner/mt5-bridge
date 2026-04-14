@@ -89,6 +89,15 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 account
 # List open positions (optional filters: --symbols XAUUSD,BTCUSD --magic 123456)
 uv run mt5-bridge client --url http://192.168.1.10:8000 positions
 
+# Get history deals by UTC date range (optional MT5 group filter)
+uv run mt5-bridge client --url http://192.168.1.10:8000 history_deals --start "2026-01-01" --end "2026-01-31" --group "*USD*"
+
+# Get history deals for a specific order ticket
+uv run mt5-bridge client --url http://192.168.1.10:8000 history_deals --ticket 123456789
+
+# Get history deals for a specific position ticket
+uv run mt5-bridge client --url http://192.168.1.10:8000 history_deals --position 987654321
+
 # Send order
 uv run mt5-bridge client --url http://192.168.1.10:8000 order XAUUSD BUY 0.01 --sl 2000.0 --tp 2050.0
 
@@ -112,6 +121,7 @@ You can also access the API directly via generic HTTP clients (curl, Postman, sp
 - `GET /ticks_range/{symbol}?start=2026-01-01&end=2026-01-02&flags=ALL` (**v1.5.0+**)
 - `GET /account`
 - `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456` (**v1.7.0+** now includes `time_msc`)
+- `GET /history/deals?start=2026-01-01&end=2026-01-31&group=*USD*` or `GET /history/deals?ticket=123456789` or `GET /history/deals?position=987654321`
 - `POST /order`
 - `POST /close`
 - `POST /modify`

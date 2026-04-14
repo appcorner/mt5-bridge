@@ -140,6 +140,66 @@ class MT5Handler:
         # We rely on _update_server_offset being called before or during.
         return int(ts - (self._server_offset_sec or 0))
 
+    def _map_deal_type(self, deal_type: int) -> str:
+        """Return a readable MT5 deal type label / MT5 deal type を読みやすい文字列へ変換."""
+        if mt5 is None:
+            return str(deal_type)
+
+        deal_type_map = {
+            getattr(mt5, "DEAL_TYPE_BUY", -1): "BUY",
+            getattr(mt5, "DEAL_TYPE_SELL", -2): "SELL",
+            getattr(mt5, "DEAL_TYPE_BALANCE", -3): "BALANCE",
+            getattr(mt5, "DEAL_TYPE_CREDIT", -4): "CREDIT",
+            getattr(mt5, "DEAL_TYPE_CHARGE", -5): "CHARGE",
+            getattr(mt5, "DEAL_TYPE_CORRECTION", -6): "CORRECTION",
+            getattr(mt5, "DEAL_TYPE_BONUS", -7): "BONUS",
+            getattr(mt5, "DEAL_TYPE_COMMISSION", -8): "COMMISSION",
+            getattr(mt5, "DEAL_TYPE_COMMISSION_DAILY", -9): "COMMISSION_DAILY",
+            getattr(mt5, "DEAL_TYPE_COMMISSION_MONTHLY", -10): "COMMISSION_MONTHLY",
+            getattr(mt5, "DEAL_TYPE_COMMISSION_AGENT_DAILY", -11): "COMMISSION_AGENT_DAILY",
+            getattr(mt5, "DEAL_TYPE_COMMISSION_AGENT_MONTHLY", -12): "COMMISSION_AGENT_MONTHLY",
+            getattr(mt5, "DEAL_TYPE_INTEREST", -13): "INTEREST",
+            getattr(mt5, "DEAL_TYPE_BUY_CANCELED", -14): "BUY_CANCELED",
+            getattr(mt5, "DEAL_TYPE_SELL_CANCELED", -15): "SELL_CANCELED",
+            getattr(mt5, "DEAL_TYPE_DIVIDEND", -16): "DIVIDEND",
+            getattr(mt5, "DEAL_TYPE_DIVIDEND_FRANKED", -17): "DIVIDEND_FRANKED",
+            getattr(mt5, "DEAL_TYPE_TAX", -18): "TAX",
+        }
+        return deal_type_map.get(int(deal_type), f"UNKNOWN_{deal_type}")
+
+    def _map_deal_entry(self, entry_type: int) -> str:
+        """Return a readable entry direction label / Entry 種別を文字列へ変換."""
+        if mt5 is None:
+            return str(entry_type)
+
+        entry_map = {
+            getattr(mt5, "DEAL_ENTRY_IN", -1): "IN",
+            getattr(mt5, "DEAL_ENTRY_OUT", -2): "OUT",
+            getattr(mt5, "DEAL_ENTRY_INOUT", -3): "INOUT",
+            getattr(mt5, "DEAL_ENTRY_OUT_BY", -4): "OUT_BY",
+        }
+        return entry_map.get(int(entry_type), f"UNKNOWN_{entry_type}")
+
+    def _map_deal_reason(self, reason: int) -> str:
+        """Return a readable reason label / 約定理由を文字列へ変換."""
+        if mt5 is None:
+            return str(reason)
+
+        reason_map = {
+            getattr(mt5, "DEAL_REASON_CLIENT", -1): "CLIENT",
+            getattr(mt5, "DEAL_REASON_MOBILE", -2): "MOBILE",
+            getattr(mt5, "DEAL_REASON_WEB", -3): "WEB",
+            getattr(mt5, "DEAL_REASON_EXPERT", -4): "EXPERT",
+            getattr(mt5, "DEAL_REASON_SL", -5): "SL",
+            getattr(mt5, "DEAL_REASON_TP", -6): "TP",
+            getattr(mt5, "DEAL_REASON_SO", -7): "SO",
+            getattr(mt5, "DEAL_REASON_ROLLOVER", -8): "ROLLOVER",
+            getattr(mt5, "DEAL_REASON_VMARGIN", -9): "VMARGIN",
+            getattr(mt5, "DEAL_REASON_SPLIT", -10): "SPLIT",
+            getattr(mt5, "DEAL_REASON_CORPORATE_ACTION", -11): "CORPORATE_ACTION",
+        }
+        return reason_map.get(int(reason), f"UNKNOWN_{reason}")
+
     def get_rates(self, symbol: str, timeframe_str: str, num_bars: int) -> Optional[List[Dict]]:
         """
         Get historical rates for a symbol.
@@ -419,6 +479,141 @@ class MT5Handler:
                 "flags": int(tick['flags']),  # Tick change flags
             })
         
+        return result
+
+    def get_history_deals(
+        self,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        group: Optional[str] = None,
+        ticket: Optional[int] = None,
+        position: Optional[int] = None,
+    ) -> Optional[List[Dict]]:
+        """
+        Retrieve trading history deals using the same lookup modes as
+        MetaTrader5.history_deals_get / MetaTrader5.history_deals_get と同じ検索モードで履歴 deal を取得.
+
+        Notes:
+        - Direct ticket/position lookups may fail with some brokers or terminal builds.
+        - When that happens, fall back to a wide range scan and filter locally.
+          / 一部の環境では ticket/position 直指定が失敗するため、広い期間検索へフォールバックする。
+        """
+        if not self.connected:
+            if not self.initialize():
+                return None
+
+        def _range_query(start_dt: datetime, end_dt: datetime, group_filter: Optional[str] = None):
+            """Run a range-based MT5 history query / 期間指定の履歴検索を実行."""
+            if group_filter:
+                return mt5.history_deals_get(start_dt, end_dt, group=group_filter)
+            return mt5.history_deals_get(start_dt, end_dt)
+
+        def _fallback_scan(filter_kind: str, filter_value: int):
+            """
+            Some MT5 terminals reject direct lookup params with last_error=(-2, Invalid params).
+            In that case, scan a wide history range and filter locally.
+            / 一部端末で Invalid params が返る場合、広い履歴を取得してローカルで絞り込む。
+            """
+            fallback_from = datetime(2000, 1, 1, tzinfo=timezone.utc)
+            fallback_to = datetime.now(timezone.utc)
+            scanned = _range_query(fallback_from, fallback_to)
+            if scanned is None:
+                return None
+
+            if filter_kind == "ticket":
+                # Accept both deal ticket and order ticket for convenience /
+                # 利便性のため deal ticket と order ticket の両方を許容
+                return [
+                    deal for deal in scanned
+                    if int(getattr(deal, "ticket", 0)) == filter_value
+                    or int(getattr(deal, "order", 0)) == filter_value
+                ]
+
+            if filter_kind == "position":
+                return [
+                    deal for deal in scanned
+                    if int(getattr(deal, "position_id", 0)) == filter_value
+                ]
+
+            return scanned
+
+        try:
+            # Select exactly one query mode / 検索モードを一つに絞る
+            if ticket is not None:
+                ticket_value = int(ticket)
+                deals = mt5.history_deals_get(ticket=ticket_value)
+                if deals is None:
+                    logger.warning(
+                        "Direct history_deals_get(ticket=%s) failed: %s. Falling back to range scan.",
+                        ticket_value,
+                        mt5.last_error(),
+                    )
+                    deals = _fallback_scan("ticket", ticket_value)
+            elif position is not None:
+                position_value = int(position)
+                deals = mt5.history_deals_get(position=position_value)
+                if deals is None:
+                    logger.warning(
+                        "Direct history_deals_get(position=%s) failed: %s. Falling back to range scan.",
+                        position_value,
+                        mt5.last_error(),
+                    )
+                    deals = _fallback_scan("position", position_value)
+            else:
+                if date_from is None or date_to is None:
+                    logger.error("date_from and date_to are required when ticket/position is not provided")
+                    return None
+
+                # The group filter is only meaningful for range queries /
+                # group フィルタは期間検索時に使用する
+                deals = _range_query(date_from, date_to, group)
+        except Exception as exc:
+            logger.error(f"Failed to query history deals: {exc}")
+            return None
+
+        if deals is None:
+            logger.error(f"Failed to get history deals: {mt5.last_error()}")
+            return None
+
+        if len(deals) == 0:
+            return []
+
+        # Estimate the server offset from the first returned symbol when needed /
+        # 必要な場合は先頭シンボルからサーバー時差を推定する
+        if self.use_utc and self._server_offset_sec is None:
+            first_symbol = getattr(deals[0], "symbol", None)
+            if first_symbol:
+                self._update_server_offset(first_symbol)
+
+        result = []
+        for deal in deals:
+            result.append({
+                "ticket": int(getattr(deal, "ticket", 0)),
+                "order": int(getattr(deal, "order", 0)),
+                "time": self._apply_time_correction(int(getattr(deal, "time", 0))),
+                "time_msc": int(getattr(deal, "time_msc", 0)),
+                "type": self._map_deal_type(int(getattr(deal, "type", -1))),
+                "type_code": int(getattr(deal, "type", -1)),
+                "entry": self._map_deal_entry(int(getattr(deal, "entry", -1))),
+                "entry_code": int(getattr(deal, "entry", -1)),
+                "magic": int(getattr(deal, "magic", 0)),
+                "position_id": int(getattr(deal, "position_id", 0)),
+                "reason": self._map_deal_reason(int(getattr(deal, "reason", -1))),
+                "reason_code": int(getattr(deal, "reason", -1)),
+                "volume": float(getattr(deal, "volume", 0.0) or 0.0),
+                "price": float(getattr(deal, "price", 0.0) or 0.0),
+                "commission": float(getattr(deal, "commission", 0.0) or 0.0),
+                "swap": float(getattr(deal, "swap", 0.0) or 0.0),
+                "profit": float(getattr(deal, "profit", 0.0) or 0.0),
+                "fee": float(getattr(deal, "fee", 0.0) or 0.0),
+                "symbol": str(getattr(deal, "symbol", "")),
+                "comment": str(getattr(deal, "comment", "")),
+                "external_id": str(getattr(deal, "external_id", "")),
+            })
+
+        # Return oldest -> newest for stable downstream processing /
+        # 下流処理の安定性のため古い順で返す
+        result.sort(key=lambda item: (item["time"], item["time_msc"], item["ticket"]))
         return result
 
     def get_account_info(self) -> Optional[Dict]:

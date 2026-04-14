@@ -130,6 +130,29 @@ class Position(BaseModel):
     time: int
     time_msc: int
 
+class HistoryDeal(BaseModel):
+    ticket: int
+    order: int
+    time: int
+    time_msc: int
+    type: str
+    type_code: int
+    entry: str
+    entry_code: int
+    magic: int
+    position_id: int
+    reason: str
+    reason_code: int
+    volume: float
+    price: float
+    commission: float
+    swap: float
+    profit: float
+    fee: float
+    symbol: str
+    comment: str
+    external_id: str
+
 async def monitor_connection():
     """Periodically check MT5 connection and reconnect if needed."""
     while True:
@@ -265,6 +288,49 @@ def get_positions(
         raise HTTPException(status_code=500, detail="Failed to get positions")
     return positions
 
+@app.get("/history/deals", response_model=List[HistoryDeal])
+def get_history_deals(
+    start: Optional[str] = Query(None, description="Start timestamp or datetime string (UTC)"),
+    end: Optional[str] = Query(None, description="End timestamp or datetime string (UTC)"),
+    group: Optional[str] = Query(None, description="Optional MT5 group filter, e.g. '*USD*' or '*, !EUR'"),
+    ticket: Optional[int] = Query(None, description="Order ticket filter"),
+    position: Optional[int] = Query(None, description="Position ticket filter"),
+):
+    """
+    Retrieve MT5 trading history deals.
+    Supports the same lookup styles as history_deals_get: range, ticket, or position.
+    """
+    # Reject ambiguous requests early / 曖昧な検索条件を早めに拒否する
+    if ticket is not None and position is not None:
+        raise HTTPException(status_code=400, detail="Specify either ticket or position, not both")
+
+    date_from = None
+    date_to = None
+
+    # Range mode requires both start and end / 期間検索では start と end が両方必要
+    if ticket is None and position is None:
+        if start is None or end is None:
+            raise HTTPException(status_code=400, detail="Provide start/end, or specify ticket, or specify position")
+        try:
+            start_ts = parse_datetime(start)
+            end_ts = parse_datetime(end)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {e}")
+
+        date_from = datetime.fromtimestamp(start_ts, tz=timezone.utc)
+        date_to = datetime.fromtimestamp(end_ts, tz=timezone.utc)
+
+    deals = mt5_handler.get_history_deals(
+        date_from=date_from,
+        date_to=date_to,
+        group=group,
+        ticket=ticket,
+        position=position,
+    )
+    if deals is None:
+        raise HTTPException(status_code=500, detail="Failed to get history deals")
+    return deals
+
 class OrderRequest(BaseModel):
     symbol: str
     type: str # "BUY" or "SELL"
@@ -385,6 +451,14 @@ def main():
     positions_p.add_argument("--symbols", help="Comma-separated list of symbols (e.g. BTCUSD,ETHUSD)")
     positions_p.add_argument("--magic", type=int, help="Magic number filter")
 
+    # History deals command / 履歴 deal 取得コマンド
+    history_deals_p = client_subs.add_parser("history_deals", help="Get MT5 history deals")
+    history_deals_p.add_argument("--start", type=str, help="Start timestamp or datetime string")
+    history_deals_p.add_argument("--end", type=str, help="End timestamp or datetime string")
+    history_deals_p.add_argument("--group", type=str, help="MT5 group filter, e.g. *USD* or *, !EUR")
+    history_deals_p.add_argument("--ticket", type=int, help="Filter by order ticket")
+    history_deals_p.add_argument("--position", type=int, help="Filter by position ticket")
+
     # Order command
     order_p = client_subs.add_parser("order", help="Send a market order")
     order_p.add_argument("symbol", type=str)
@@ -472,6 +546,25 @@ def main():
         elif args.client_command == "positions":
             symbols = args.symbols.split(",") if args.symbols else None
             print(json.dumps(client.get_positions(symbols=symbols, magic=args.magic), indent=2))
+        elif args.client_command == "history_deals":
+            try:
+                # Convert date inputs only when range mode is used / 期間検索時のみ日付を変換
+                start_ts = parse_datetime(args.start) if args.start else None
+                end_ts = parse_datetime(args.end) if args.end else None
+                result = client.get_history_deals(
+                    start=start_ts,
+                    end=end_ts,
+                    group=args.group,
+                    ticket=args.ticket,
+                    position=args.position,
+                )
+                print(f"Retrieved {len(result)} deals")
+                print(json.dumps(result[:10] if len(result) > 10 else result, indent=2))
+                if len(result) > 10:
+                    print(f"... and {len(result) - 10} more deals")
+            except Exception as e:
+                print(f"Error: {e}")
+                sys.exit(1)
         elif args.client_command == "order":
             print(json.dumps(client.send_order(
                 args.symbol, args.type, args.volume, args.sl, args.tp, args.comment, args.magic

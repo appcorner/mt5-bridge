@@ -109,6 +109,41 @@ class BridgeClient:
             print(f"Error fetching tick: {e}")
             return None
 
+    def get_history_deals(
+        self,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        group: Optional[str] = None,
+        ticket: Optional[int] = None,
+        position: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve MT5 history deals by date range, order ticket, or position ticket.
+        MT5 の history deals を期間・注文 ticket・position ticket で取得する.
+        """
+        url = f"{self.base_url}/history/deals"
+        params: Dict[str, Any] = {}
+
+        # Only include non-empty filters / 空でないフィルタだけを送信
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
+        if group:
+            params["group"] = group
+        if ticket is not None:
+            params["ticket"] = ticket
+        if position is not None:
+            params["position"] = position
+
+        try:
+            resp = httpx.get(url, params=params, timeout=60.0)
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as e:
+            print(f"Error fetching history deals: {e}")
+            return []
+
     def get_book(self, symbol: str) -> List[Dict[str, Any]]:
         """Get current market depth (Level 2)."""
         url = f"{self.base_url}/book/{symbol}"

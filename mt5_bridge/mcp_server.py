@@ -67,6 +67,29 @@ def list_positions() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+def get_history_deals(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    group: Optional[str] = None,
+    ticket: Optional[int] = None,
+    position: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch MT5 history deals by range, order ticket, or position ticket."""
+    params: Dict[str, Any] = {}
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+    if group:
+        params["group"] = group
+    if ticket is not None:
+        params["ticket"] = ticket
+    if position is not None:
+        params["position"] = position
+    return _request("GET", "/history/deals", params=params)
+
+
+@mcp.tool()
 def send_order(
     symbol: str,
     side: Literal["BUY", "SELL"],

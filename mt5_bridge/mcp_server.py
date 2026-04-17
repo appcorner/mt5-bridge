@@ -1,5 +1,6 @@
 """
 MCP server bridging Copilot CLI to MT5 Bridge.
+MCP server สำหรับเชื่อม Copilot CLI เข้ากับ MT5 Bridge.
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ def _request(
     json: Optional[Dict[str, Any]] = None,
     params: Optional[Dict[str, Any]] = None,
 ) -> Any:
-    # Single HTTP request wrapper with consistent error handling.
+    # Single HTTP request wrapper with consistent error handling /
+    # ตัวห่อสำหรับยิง HTTP request หนึ่งครั้งพร้อมจัดการ error ให้สม่ำเสมอ
     try:
         with httpx.Client(base_url=BASE_URL, timeout=10.0) as client:
             response = client.request(method, path, json=json, params=params)
@@ -44,25 +46,37 @@ def _request(
 
 @mcp.tool()
 def health() -> Dict[str, Any]:
-    """Check the health status of the MT5 Bridge."""
+    """
+    Check the health status of the MT5 Bridge.
+    ตรวจสอบสถานะสุขภาพของ MT5 Bridge.
+    """
     return _request("GET", "/health")
 
 
 @mcp.tool()
 def get_rates(symbol: str, timeframe: str = "M1", count: int = 100) -> List[Dict[str, Any]]:
-    """Fetch OHLCV bars."""
+    """
+    Fetch OHLCV bars.
+    ดึงข้อมูลแท่งราคา OHLCV.
+    """
     return _request("GET", f"/rates/{symbol}", params={"timeframe": timeframe, "count": count})
 
 
 @mcp.tool()
 def get_tick(symbol: str) -> Dict[str, Any]:
-    """Fetch the latest tick."""
+    """
+    Fetch the latest tick.
+    ดึง tick ล่าสุด.
+    """
     return _request("GET", f"/tick/{symbol}")
 
 
 @mcp.tool()
 def list_positions() -> List[Dict[str, Any]]:
-    """List open positions."""
+    """
+    List open positions.
+    แสดงรายการ position ที่ยังเปิดอยู่.
+    """
     return _request("GET", "/positions")
 
 
@@ -74,7 +88,10 @@ def get_history_deals(
     ticket: Optional[int] = None,
     position: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch MT5 history deals by range, order ticket, or position ticket."""
+    """
+    Fetch MT5 history deals by range, order ticket, or position ticket.
+    ดึง MT5 history deals ตามช่วงเวลา, order ticket หรือ position ticket.
+    """
     params: Dict[str, Any] = {}
     if start is not None:
         params["start"] = start
@@ -98,14 +115,20 @@ def send_order(
     tp: float = 0.0,
     comment: str = "",
 ) -> Dict[str, Any]:
-    """Submit a market order."""
+    """
+    Submit a market order.
+    ส่ง market order ไปยัง MT5 Bridge.
+    """
     payload = {"symbol": symbol, "type": side, "volume": volume, "sl": sl, "tp": tp, "comment": comment}
     return _request("POST", "/order", json=payload)
 
 
 @mcp.tool()
 def close_position(ticket: int) -> Dict[str, Any]:
-    """Close a position by ticket."""
+    """
+    Close a position by ticket.
+    ปิด position ตาม ticket ที่ระบุ.
+    """
     return _request("POST", "/close", json={"ticket": ticket})
 
 
@@ -117,7 +140,10 @@ def modify_position(
     update_sl: bool = False,
     update_tp: bool = False,
 ) -> Dict[str, Any]:
-    """Update SL/TP for a position."""
+    """
+    Update SL/TP for a position.
+    ปรับค่า SL/TP ของ position ที่ระบุ.
+    """
     payload = {"ticket": ticket, "sl": sl, "tp": tp, "update_sl": update_sl, "update_tp": update_tp}
     return _request("POST", "/modify", json=payload)
 
@@ -126,7 +152,8 @@ def modify_position(
 if __name__ == "__main__":
     import argparse
 
-    # Parse CLI arguments so the operator can set the API base URL and MCP listen address.
+    # Parse CLI arguments so the operator can configure API URL and listen address /
+    # แปลง argument จาก CLI เพื่อให้ผู้ใช้งานตั้งค่า API base URL และที่อยู่สำหรับรับการเชื่อมต่อได้
     parser = argparse.ArgumentParser(description="Run MT5 Bridge MCP over HTTP")
     parser.add_argument("--http", action="store_true", help="Run MCP over HTTP (default: stdio)")
     parser.add_argument("--api-base", default=BASE_URL, help="MT5 Bridge API base URL (default: env MT5_BRIDGE_BASE_URL or http://localhost:8000)")
@@ -134,8 +161,8 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8001, help="MCP listen port (default: 8001)")
     args = parser.parse_args()
 
-    # Override BASE_URL from the CLI arguments.
-    #global BASE_URL
+    # Override BASE_URL using the CLI value /
+    # เขียนทับ BASE_URL จากค่าที่ส่งมาทาง CLI
     BASE_URL = args.api_base
 
     if args.http:

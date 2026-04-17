@@ -14,7 +14,8 @@ import pandas as pd
 from importlib.metadata import version, PackageNotFoundError
 from contextlib import asynccontextmanager
 
-# Try relative imports (package mode), fallback to path manipulation (script mode)
+# Try relative imports first, then fall back to script-mode path handling /
+# ลอง import แบบ relative ก่อน แล้วค่อย fallback เป็นการปรับ path สำหรับโหมดรันแบบสคริปต์
 try:
     from .mt5_handler import MT5Handler
     from .client import BridgeClient
@@ -27,8 +28,12 @@ mt5_handler = MT5Handler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage the startup and shutdown lifecycle for the MT5 connection."""
-    # Initialize MT5 only on Windows and keep background reconnection checks running.
+    """
+    Manage the startup and shutdown lifecycle for the MT5 connection.
+    จัดการวงจรเริ่มต้นและปิดระบบของการเชื่อมต่อ MT5.
+    """
+    # Initialize MT5 only on Windows and keep the reconnection monitor running /
+    # เริ่ม MT5 เฉพาะบน Windows และเปิดตัวตรวจสอบการเชื่อมต่อไว้เบื้องหลัง
     if sys.platform == "win32":
         if not mt5_handler.initialize():
             print("WARNING: Failed to initialize MT5 on startup. Will retry in background.")
@@ -41,7 +46,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # Stop the background monitor first, then close the MT5 session cleanly.
+        # Stop the background monitor first, then close the MT5 session cleanly /
+        # หยุดตัวตรวจสอบเบื้องหลังก่อน แล้วค่อยปิด session ของ MT5 ให้เรียบร้อย
         if monitor_task:
             monitor_task.cancel()
             try:
@@ -53,18 +59,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MT5 Bridge API", lifespan=lifespan)
 
 def parse_datetime(val: str) -> int:
-    """Parse a string as a unix timestamp or a datetime string."""
+    """
+    Parse a string as a unix timestamp or a datetime string.
+    แปลงข้อความให้เป็น unix timestamp หรือ datetime string.
+    """
     try:
-        # Try as a numeric timestamp first
+        # Try parsing as a numeric timestamp first /
+        # ลองแปลงเป็นตัวเลข timestamp ก่อน
         return int(float(val))
     except ValueError:
-        # Try as a datetime string using pandas for flexibility
+        # Fall back to pandas datetime parsing for flexible input formats /
+        # ถ้าไม่ใช่ตัวเลข ให้ใช้ pandas ช่วยแปลงรูปแบบวันที่ที่หลากหลาย
         dt = pd.to_datetime(val)
         if dt.tzinfo is None:
-            # Assume UTC if no timezone is provided
+            # Assume UTC when no timezone is provided /
+            # ถ้าไม่มี timezone ให้ถือว่าเป็น UTC
             dt = dt.tz_localize('UTC')
         else:
-            # Convert to UTC if a timezone is provided
+            # Normalize to UTC when timezone information exists /
+            # ถ้ามี timezone มาแล้วให้แปลงกลับเป็น UTC
             dt = dt.tz_convert('UTC')
         return int(dt.timestamp())
 
@@ -87,21 +100,27 @@ class Tick(BaseModel):
     volume: int
 
 class HistoricalTick(BaseModel):
-    """Historical tick data model with millisecond precision."""
-    time: int              # Timestamp in seconds (UTC)
-    time_msc: int          # Timestamp in milliseconds
+    """
+    Historical tick data model with millisecond precision.
+    โมเดลข้อมูล historical tick ที่เก็บเวลาระดับมิลลิวินาที.
+    """
+    time: int              # Timestamp in seconds (UTC) / เวลาแบบวินาทีใน UTC
+    time_msc: int          # Timestamp in milliseconds / เวลาแบบมิลลิวินาที
     bid: float
     ask: float
     last: float
     volume: int
-    flags: int             # Tick change flags (Bid/Ask/Last/Volume updates)
+    flags: int             # Tick change flags / สถานะการเปลี่ยนแปลงของ Bid/Ask/Last/Volume
 
 class BookItem(BaseModel):
-    """Market depth item model."""
-    type: str              # BUY, SELL, BUY_LIMIT, SELL_LIMIT, OTHER
+    """
+    Market depth item model.
+    โมเดลข้อมูลแต่ละแถวของ market depth.
+    """
+    type: str              # BUY, SELL, BUY_LIMIT, SELL_LIMIT, OTHER / ประเภทของรายการในสมุดราคา
     price: float
     volume: float
-    #volume_real: float
+    # volume_real: float  # Optional raw volume field / field ปริมาณแบบ raw ที่เก็บไว้เผื่อใช้ภายหลัง
     volume_dbl: float
 
 class Account(BaseModel):
@@ -154,12 +173,15 @@ class HistoryDeal(BaseModel):
     external_id: str
 
 async def monitor_connection():
-    """Periodically check MT5 connection and reconnect if needed."""
+    """
+    Periodically check MT5 connection and reconnect if needed.
+    ตรวจสอบการเชื่อมต่อ MT5 เป็นระยะและเชื่อมใหม่เมื่อจำเป็น.
+    """
     while True:
         try:
             if not mt5_handler.check_connection():
                 print("WARNING: MT5 connection lost. Reconnecting...")
-            await asyncio.sleep(5)  # Check every 5 seconds
+            await asyncio.sleep(5)  # Check every 5 seconds / ตรวจสอบทุก 5 วินาที
         except Exception as e:
             print(f"Error in connection monitor: {e}")
             await asyncio.sleep(5)
@@ -276,7 +298,8 @@ def get_positions(
     symbols: Optional[str] = Query(None, description="Comma-separated list of symbols to filter (e.g., 'XAUUSD,BTCUSD')"),
     magic: Optional[int] = Query(None, description="Magic number to filter positions by"),
 ):
-    # Convert the symbols parameter to a list when provided.
+    # Convert the comma-separated symbols string into a clean list when provided /
+    # แปลง symbols ที่คั่นด้วย comma ให้เป็น list ที่พร้อมใช้งานเมื่อมีการส่งเข้ามา
     symbol_list = None
     if symbols:
         symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
@@ -299,15 +322,19 @@ def get_history_deals(
     """
     Retrieve MT5 trading history deals.
     Supports the same lookup styles as history_deals_get: range, ticket, or position.
+    ดึงประวัติการเทรดแบบ deals ของ MT5.
+    รองรับรูปแบบค้นหาแบบเดียวกับ history_deals_get คือ range, ticket หรือ position.
     """
-    # Reject ambiguous requests early / 曖昧な検索条件を早めに拒否する
+    # Reject ambiguous requests early /
+    # ปฏิเสธคำขอที่กำกวมตั้งแต่ต้นเพื่อลดความผิดพลาดของ API
     if ticket is not None and position is not None:
         raise HTTPException(status_code=400, detail="Specify either ticket or position, not both")
 
     date_from = None
     date_to = None
 
-    # Range mode requires both start and end / 期間検索では start と end が両方必要
+    # Range mode requires both start and end /
+    # โหมดค้นหาตามช่วงเวลาต้องมีทั้ง start และ end เสมอ
     if ticket is None and position is None:
         if start is None or end is None:
             raise HTTPException(status_code=400, detail="Provide start/end, or specify ticket, or specify position")
@@ -333,7 +360,7 @@ def get_history_deals(
 
 class OrderRequest(BaseModel):
     symbol: str
-    type: str # "BUY" or "SELL"
+    type: str  # "BUY" or "SELL" / ประเภทคำสั่งซื้อขาย
     volume: float
     sl: float = 0.0
     tp: float = 0.0
@@ -402,7 +429,7 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Serve command
+    # Server command group / กลุ่มคำสั่งสำหรับรันเซิร์ฟเวอร์
     server_parser = subparsers.add_parser("server", help="Run MT5 Bridge Server (Windows Only)")
     server_parser.add_argument(
         "--host",
@@ -421,13 +448,13 @@ def main():
     server_parser.add_argument("--mt5-server", default=None, help="MT5 Server Name")
     server_parser.add_argument("--no-utc", action="store_true", help="Disable UTC conversion")
 
-    # Client command
+    # Client command group / กลุ่มคำสั่งสำหรับเรียกใช้งาน client
     client_parser = subparsers.add_parser("client", help="Run MT5 Bridge Client")
     client_parser.add_argument("--url", default="http://localhost:8000", help="Server URL")
     
     client_subs = client_parser.add_subparsers(dest="client_command", help="Client command", required=True)
     
-    # Client Subcommands
+    # Client subcommands / คำสั่งย่อยของ client
     client_subs.add_parser("health", help="Check server health")
     
     rates_p = client_subs.add_parser("rates", help="Get historical rates")
@@ -435,7 +462,8 @@ def main():
     rates_p.add_argument("--timeframe", default="M1")
     rates_p.add_argument("--count", type=int, default=1000)
     
-    # Command for retrieving historical rates by date range.
+    # Command for retrieving historical rates by date range /
+    # คำสั่งสำหรับดึง historical rates ตามช่วงเวลา
     rates_range_p = client_subs.add_parser("rates_range", help="Get historical rates by date range")
     rates_range_p.add_argument("symbol", type=str)
     rates_range_p.add_argument("--timeframe", default="M1", help="Timeframe (e.g. M1, H1)")
@@ -451,7 +479,7 @@ def main():
     positions_p.add_argument("--symbols", help="Comma-separated list of symbols (e.g. BTCUSD,ETHUSD)")
     positions_p.add_argument("--magic", type=int, help="Magic number filter")
 
-    # History deals command / 履歴 deal 取得コマンド
+    # History deals command / คำสั่งดึงประวัติ deals
     history_deals_p = client_subs.add_parser("history_deals", help="Get MT5 history deals")
     history_deals_p.add_argument("--start", type=str, help="Start timestamp or datetime string")
     history_deals_p.add_argument("--end", type=str, help="End timestamp or datetime string")
@@ -459,7 +487,7 @@ def main():
     history_deals_p.add_argument("--ticket", type=int, help="Filter by order ticket")
     history_deals_p.add_argument("--position", type=int, help="Filter by position ticket")
 
-    # Order command
+    # Order command / คำสั่งส่ง market order
     order_p = client_subs.add_parser("order", help="Send a market order")
     order_p.add_argument("symbol", type=str)
     order_p.add_argument("type", type=str, choices=["BUY", "SELL"])
@@ -469,17 +497,18 @@ def main():
     order_p.add_argument("--comment", type=str, default="")
     order_p.add_argument("--magic", type=int, default=123456)
 
-    # Close command
+    # Close command / คำสั่งปิด position
     close_p = client_subs.add_parser("close", help="Close a position")
     close_p.add_argument("ticket", type=int)
 
-    # Modify command
+    # Modify command / คำสั่งแก้ไข SL และ TP ของ position
     modify_p = client_subs.add_parser("modify", help="Modify position SL/TP")
     modify_p.add_argument("ticket", type=int)
     modify_p.add_argument("--sl", type=float, default=None)
     modify_p.add_argument("--tp", type=float, default=None)
 
-    # Tick data commands (for tick scalping / high-frequency trading research)
+    # Tick-data commands for research workloads such as scalping analysis /
+    # คำสั่งข้อมูล tick สำหรับงานวิเคราะห์ เช่น scalping หรือ high-frequency research
     ticks_from_p = client_subs.add_parser("ticks_from", help="Get historical ticks from a specific date")
     ticks_from_p.add_argument("symbol", type=str)
     ticks_from_p.add_argument("--start", type=str, required=True, help="Start timestamp or datetime string (e.g. 2025-01-01)")
@@ -494,7 +523,7 @@ def main():
     ticks_range_p.add_argument("--flags", type=str, default="ALL", choices=["ALL", "INFO", "TRADE"],
                                 help="Tick type: ALL, INFO (bid/ask), TRADE (last/volume)")
 
-    # Market Book (Level 2) command
+    # Market Book (Level 2) command / คำสั่งดึง market depth แบบ Level 2
     book_p = client_subs.add_parser("book", help="Get current market depth (Level 2)")
     book_p.add_argument("symbol", type=str)
 
@@ -505,7 +534,8 @@ def main():
             print("Error: Server functionality is only supported on Windows.")
             sys.exit(1)
 
-        # Configure MT5 handler with CLI args
+        # Apply CLI options to the shared MT5 handler instance /
+        # นำค่า argument จาก CLI ไปตั้งให้ MT5 handler กลาง
         if args.mt5_path:
             mt5_handler.program_path = args.mt5_path
         if args.mt5_login:
@@ -515,14 +545,16 @@ def main():
         if args.mt5_server:
             mt5_handler.server = args.mt5_server
         
-        # Configure UTC conversion
+        # Configure UTC conversion behavior /
+        # ตั้งค่าการแปลงเวลาจาก server time ไปเป็น UTC
         mt5_handler.use_utc = not args.no_utc
         if mt5_handler.use_utc:
             print("UTC conversion enabled (Server Time -> UTC)")
         else:
             print("UTC conversion disabled (Raw Server Time)")
 
-        # Run Server
+        # Start the FastAPI server /
+        # เริ่มต้นการทำงานของ FastAPI server
         uvicorn.run(app, host=args.host, port=args.port)
 
     elif args.command == "client":
@@ -548,7 +580,8 @@ def main():
             print(json.dumps(client.get_positions(symbols=symbols, magic=args.magic), indent=2))
         elif args.client_command == "history_deals":
             try:
-                # Convert date inputs only when range mode is used / 期間検索時のみ日付を変換
+                # Convert date inputs only when range mode is used /
+                # แปลงค่าวันที่เฉพาะตอนใช้งานโหมดค้นหาตามช่วงเวลา
                 start_ts = parse_datetime(args.start) if args.start else None
                 end_ts = parse_datetime(args.end) if args.end else None
                 result = client.get_history_deals(
@@ -603,3 +636,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Build command for Windows executable (with MT5 included) /
+# คำสั่ง build สำหรับสร้าง executable บน Windows พร้อม MT5
+# uv run pyinstaller --onefile --clean --collect-all uvicorn --hidden-import=mt5_bridge.main --hidden-import=uvicorn.logging --hidden-import=uvicorn.protocols.http.httptools_impl --name "mt5-bridge-service" mt5_bridge/main.py

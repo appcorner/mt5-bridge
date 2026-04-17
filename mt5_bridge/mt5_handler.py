@@ -1,11 +1,11 @@
 import sys
 import logging
 
-# Configure logging
+# Configure logging / ตั้งค่าระบบบันทึก log
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Conditional import for MetaTrader5
+# Conditional import for MetaTrader5 / import MetaTrader5 แบบมีเงื่อนไขตามแพลตฟอร์ม
 if sys.platform == 'win32':
     try:
         import MetaTrader5 as mt5
@@ -42,8 +42,9 @@ class MT5Handler:
     def initialize(self) -> bool:
         """
         Initialize connection to MetaTrader 5 terminal.
+        เริ่มต้นการเชื่อมต่อกับโปรแกรม MetaTrader 5.
         """
-        # If path is specified, use it
+        # If path is specified, use it / ถ้ามีการระบุ path ให้ส่งต่อไปตอน initialize
         init_args = {}
         if self.program_path:
             init_args["path"] = self.program_path
@@ -58,7 +59,8 @@ class MT5Handler:
             self.connected = False
             return False
             
-        # If login credentials are provided, try to login
+        # If login credentials are provided, try to login /
+        # ถ้ามีข้อมูลล็อกอินครบ ให้พยายาม login หลัง initialize
         if self.login and self.password and self.server:
             authorized = mt5.login(
                 login=self.login,
@@ -79,6 +81,8 @@ class MT5Handler:
         """
         Check if connection is still alive using terminal_info.
         Attempt to reconnect if lost.
+        ตรวจสอบว่าการเชื่อมต่อยังใช้งานได้ผ่าน terminal_info.
+        ถ้าหลุดการเชื่อมต่อให้ลองเชื่อมใหม่อัตโนมัติ.
         """
         if not mt5.terminal_info():
             self.connected = False
@@ -91,6 +95,7 @@ class MT5Handler:
     def shutdown(self):
         """
         Shutdown connection to MetaTrader 5.
+        ปิดการเชื่อมต่อกับ MetaTrader 5.
         """
         mt5.shutdown()
         self.connected = False
@@ -100,11 +105,14 @@ class MT5Handler:
         """
         Estimate server timezone offset relative to UTC using the given symbol's tick time.
         Offset = ServerTime - UTC.
+        ประมาณค่า timezone offset ของ server เทียบกับ UTC จากเวลา tick ของ symbol ที่ระบุ.
+        ค่า offset คำนวณจาก ServerTime - UTC.
         """
         if self._server_offset_sec is not None:
             return
 
-        # Ensure symbol is selected to get fresh tick
+        # Ensure symbol is selected to get fresh tick /
+        # เลือก symbol ไว้ก่อนเพื่อเพิ่มโอกาสได้ tick ล่าสุด
         if not mt5.symbol_select(symbol, True):
             logger.warning(f"Failed to select symbol {symbol} for offset calculation")
 
@@ -115,7 +123,8 @@ class MT5Handler:
             server_ts = int(tick.time)
         else:
             logger.warning(f"Tick not available for {symbol}, trying last rate for offset")
-            # Try to fetch just 1 bar of M1 to guess time
+            # Try to fetch just 1 M1 bar to estimate server time /
+            # ลองดึงแท่ง M1 เพียง 1 แท่งเพื่อประมาณเวลา server
             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
             if rates is not None and len(rates) > 0:
                 server_ts = int(rates[0]['time'])
@@ -123,25 +132,82 @@ class MT5Handler:
                 logger.error(f"Could not determine server time for {symbol} (no tick, no rates)")
                 return
 
-        # Use simple utc timestamp
+        # Use the current UTC timestamp as the comparison baseline /
+        # ใช้เวลา UTC ปัจจุบันเป็นฐานสำหรับเทียบ offset
         utc_ts = datetime.now(timezone.utc).timestamp()
         
         diff = server_ts - utc_ts
-        # Round to nearest 15 minutes (900s) to handle latency and candle close lag
+        # Round to the nearest 15 minutes to smooth latency and bar-close lag /
+        # ปัดเป็นช่วงละ 15 นาทีเพื่อลดผลกระทบจาก latency และเวลาปิดแท่ง
         rounded_diff = round(diff / 900) * 900
         self._server_offset_sec = int(rounded_diff)
         logger.info(f"Server timezone offset estimated: {self._server_offset_sec}s (using {symbol}, raw_diff={diff:.1f}s)")
 
     def _apply_time_correction(self, ts: int) -> int:
-        """Convert server timestamp to UTC if use_utc is True."""
+        """
+        Convert server timestamp to UTC if use_utc is True.
+        แปลงเวลา server เป็น UTC เมื่อเปิดใช้ use_utc.
+        """
         if not self.use_utc:
             return ts
-        # If offset not yet calculated, we can't correct yet (or assume 0)
-        # We rely on _update_server_offset being called before or during.
+        # If offset is not ready yet, fall back to zero correction for now /
+        # ถ้ายังไม่มี offset ให้ถือว่าแก้ไขเวลาเป็นศูนย์ไปก่อนชั่วคราว
+        # We rely on _update_server_offset being called before or during /
+        # โดยคาดว่า _update_server_offset จะถูกเรียกก่อนหรือระหว่างการใช้งาน
         return int(ts - (self._server_offset_sec or 0))
 
+    def _is_market_closed_from_tick(self, tick) -> bool:
+        """
+        Detect likely market-close state from symbol_info_tick() only.
+        ประเมินอย่างระมัดระวังจาก symbol_info_tick() เพียงอย่างเดียวว่าตลาดน่าจะปิดอยู่หรือไม่.
+        """
+        # Guard against missing or malformed tick objects /
+        # ถ้า tick หายหรือโครงสร้างผิดปกติ ให้โน้มเอียงไปทางปิดตลาด
+        tick_time = int(getattr(tick, "time", 0) or 0)
+        if tick_time <= 0:
+            logger.warning("Tick time is missing or invalid. Treating as market closed.")
+            return True
+
+        bid = float(getattr(tick, "bid", 0.0) or 0.0)
+        ask = float(getattr(tick, "ask", 0.0) or 0.0)
+        last = float(getattr(tick, "last", 0.0) or 0.0)
+        volume = int(getattr(tick, "volume", 0) or 0)
+
+        # Some brokers return an all-zero quote when the symbol is inactive /
+        # บางโบรกเกอร์จะคืน quote เป็นศูนย์ทั้งหมดเมื่อ symbol ไม่มีการส่งราคา
+        if bid == 0.0 and ask == 0.0 and last == 0.0 and volume == 0:
+            logger.info("Market appears closed because tick quote is all zeros.")
+            return True
+
+        now_utc = datetime.now(timezone.utc)
+        tick_utc = datetime.fromtimestamp(tick_time, tz=timezone.utc)
+        tick_age_sec = (now_utc - tick_utc).total_seconds()
+
+        # Weekend closure is common when MT5 keeps the last known quote /
+        # ช่วงสุดสัปดาห์ MT5 มักคง quote ล่าสุดไว้แม้ตลาดปิดแล้ว
+        if now_utc.weekday() >= 5 and tick_age_sec > 30 * 60:
+            logger.info(
+                "Market appears closed because the latest tick is stale on weekend: age=%.0fs",
+                tick_age_sec,
+            )
+            return True
+
+        # Keep the heuristic conservative on weekdays to avoid false positives /
+        # ในวันทำการให้ใช้เกณฑ์แบบระวังเพื่อหลีกเลี่ยงการตัดสินผิดว่า market ปิด
+        if tick_age_sec > 8 * 60 * 60 and volume == 0:
+            logger.info(
+                "Market appears closed because the latest tick is stale for %.0f seconds.",
+                tick_age_sec,
+            )
+            return True
+
+        return False
+
     def _map_deal_type(self, deal_type: int) -> str:
-        """Return a readable MT5 deal type label / MT5 deal type を読みやすい文字列へ変換."""
+        """
+        Return a readable MT5 deal type label.
+        แปลง MT5 deal type ให้เป็นข้อความที่อ่านเข้าใจง่าย.
+        """
         if mt5 is None:
             return str(deal_type)
 
@@ -168,7 +234,10 @@ class MT5Handler:
         return deal_type_map.get(int(deal_type), f"UNKNOWN_{deal_type}")
 
     def _map_deal_entry(self, entry_type: int) -> str:
-        """Return a readable entry direction label / Entry 種別を文字列へ変換."""
+        """
+        Return a readable entry direction label.
+        แปลงประเภท entry direction ให้เป็นข้อความที่อ่านง่าย.
+        """
         if mt5 is None:
             return str(entry_type)
 
@@ -181,7 +250,10 @@ class MT5Handler:
         return entry_map.get(int(entry_type), f"UNKNOWN_{entry_type}")
 
     def _map_deal_reason(self, reason: int) -> str:
-        """Return a readable reason label / 約定理由を文字列へ変換."""
+        """
+        Return a readable reason label.
+        แปลงเหตุผลของ deal ให้เป็นข้อความที่อ่านง่าย.
+        """
         if mt5 is None:
             return str(reason)
 
@@ -203,6 +275,7 @@ class MT5Handler:
     def get_rates(self, symbol: str, timeframe_str: str, num_bars: int) -> Optional[List[Dict]]:
         """
         Get historical rates for a symbol.
+        ดึงข้อมูลราคาในอดีตของ symbol.
         
         Args:
             symbol: Symbol name (e.g., "XAUUSD")
@@ -211,12 +284,14 @@ class MT5Handler:
             
         Returns:
             List of dictionaries containing rate data, or None if failed.
+            คืนรายการข้อมูลราคาแบบ dictionary หรือ None ถ้าล้มเหลว.
         """
         if not self.connected:
             if not self.initialize():
                 return None
 
-        # Map timeframe string to MT5 constant
+        # Map timeframe string to the MT5 constant /
+        # แปลงชื่อ timeframe จากข้อความให้เป็นค่าคงที่ของ MT5
         tf_map = {
             "M1": mt5.TIMEFRAME_M1,
             "M5": mt5.TIMEFRAME_M5,
@@ -234,7 +309,8 @@ class MT5Handler:
             logger.error(f"Invalid timeframe: {timeframe_str}")
             return None
 
-        # Copy rates from current time backwards
+        # Copy rates starting from the latest bar backward /
+        # ดึงข้อมูลแท่งจากปัจจุบันย้อนหลังไปตามจำนวนที่ต้องการ
         rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, num_bars)
         
         if self.use_utc and self._server_offset_sec is None:
@@ -244,8 +320,8 @@ class MT5Handler:
             logger.error(f"Failed to get rates for {symbol}")
             return None
             
-        # Convert to list of dicts (handling numpy types)
-        # rates is a numpy record array
+        # Convert the NumPy record array into plain dictionaries /
+        # แปลง NumPy record array ให้อยู่ในรูป dictionary ปกติ
         result = []
         for rate in rates:
             result.append({
@@ -264,6 +340,7 @@ class MT5Handler:
     def get_rates_range(self, symbol: str, timeframe_str: str, date_from: datetime, date_to: datetime) -> Optional[List[Dict]]:
         """
         Get historical rates for a symbol within a date range.
+        ดึงข้อมูลราคาในอดีตของ symbol ภายในช่วงวันที่กำหนด.
         
         Args:
             symbol: Symbol name
@@ -273,12 +350,14 @@ class MT5Handler:
             
         Returns:
             List of dictionaries containing rate data.
+            คืนรายการข้อมูลราคาแบบ dictionary.
         """
         if not self.connected:
             if not self.initialize():
                 return None
 
-        # Map timeframe string to MT5 constant
+        # Map timeframe string to the MT5 constant /
+        # แปลงชื่อ timeframe จากข้อความให้เป็นค่าคงที่ของ MT5
         tf_map = {
             "M1": mt5.TIMEFRAME_M1,
             "M5": mt5.TIMEFRAME_M5,
@@ -296,8 +375,8 @@ class MT5Handler:
             logger.error(f"Invalid timeframe: {timeframe_str}")
             return None
 
-        # copy_rates_range expects server time, so apply the reverse
-        # conversion from UTC to server time here.
+        # copy_rates_range expects server time, so reverse UTC conversion here /
+        # copy_rates_range ต้องใช้เวลา server จึงต้องแปลงย้อนจาก UTC ตรงนี้
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -329,6 +408,8 @@ class MT5Handler:
     def get_tick(self, symbol: str) -> Optional[Dict]:
         """
         Get latest tick data.
+        Return None when the symbol appears to be in a market-close state.
+        ดึง tick ล่าสุด และคืน None ถ้า symbol ดูเหมือนอยู่ในช่วงตลาดปิด.
         """
         if not self.connected:
             if not self.initialize():
@@ -337,6 +418,12 @@ class MT5Handler:
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             logger.error(f"Failed to get tick for {symbol}")
+            return None
+
+        # MT5 may keep returning the last known tick while the market is closed /
+        # MT5 อาจยังคืน tick ล่าสุดเดิมแม้ตลาดปิด จึงต้องมีการกรองเพิ่ม
+        if self._is_market_closed_from_tick(tick):
+            logger.info(f"Market is closed for {symbol}. Returning None instead of stale tick.")
             return None
             
         if self.use_utc and self._server_offset_sec is None:
@@ -360,6 +447,7 @@ class MT5Handler:
     ) -> Optional[List[Dict]]:
         """
         Retrieve a specified number of historical ticks starting from a given datetime.
+        ดึง historical ticks ตามจำนวนที่ต้องการ โดยเริ่มจากเวลาที่ระบุ.
 
         Args:
             symbol: Symbol name, for example "XAUUSD"
@@ -372,12 +460,14 @@ class MT5Handler:
 
         Returns:
             A list of tick data dictionaries, or None if an error occurs
+            คืนรายการ tick แบบ dictionary หรือ None เมื่อเกิดข้อผิดพลาด
         """
         if not self.connected:
             if not self.initialize():
                 return None
         
-        # Map the public flag names to the MT5 constants.
+        # Map public flag names to MT5 constants /
+        # แปลงชื่อ flags ที่รับจากภายนอกเป็นค่าคงที่ของ MT5
         flag_map = {
             "ALL": mt5.COPY_TICKS_ALL,
             "INFO": mt5.COPY_TICKS_INFO,
@@ -385,7 +475,8 @@ class MT5Handler:
         }
         mt5_flags = flag_map.get(flags.upper(), mt5.COPY_TICKS_ALL)
         
-        # Apply the reverse conversion from UTC to server time.
+        # Convert the requested UTC timestamp back to server time /
+        # แปลงเวลาที่รับมาใน UTC กลับเป็นเวลา server ก่อนเรียก MT5
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -402,17 +493,18 @@ class MT5Handler:
             logger.warning(f"No ticks returned for {symbol} from {date_from}")
             return []
         
-        # Convert the NumPy array into a list of dictionaries.
+        # Convert the NumPy array into plain dictionaries /
+        # แปลงผลลัพธ์ NumPy array ให้อยู่ในรูป dictionary ปกติ
         result = []
         for tick in ticks:
             result.append({
                 "time": self._apply_time_correction(int(tick['time'])),
-                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision
+                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision / timestamp ระดับมิลลิวินาที
                 "bid": float(tick['bid']),
                 "ask": float(tick['ask']),
                 "last": float(tick['last']),
                 "volume": int(tick['volume']),
-                "flags": int(tick['flags']),  # Tick change flags
+                "flags": int(tick['flags']),  # Tick change flags / สถานะการเปลี่ยนแปลงของ tick
             })
         
         return result
@@ -426,6 +518,7 @@ class MT5Handler:
     ) -> Optional[List[Dict]]:
         """
         Retrieve historical tick data within the specified datetime range.
+        ดึง historical tick ภายในช่วงเวลาที่กำหนด.
 
         Args:
             symbol: Symbol name, for example "XAUUSD"
@@ -435,12 +528,14 @@ class MT5Handler:
 
         Returns:
             A list of tick data dictionaries, or None if an error occurs
+            คืนรายการ tick แบบ dictionary หรือ None เมื่อเกิดข้อผิดพลาด
         """
         if not self.connected:
             if not self.initialize():
                 return None
         
-        # Map the public flag names to the MT5 constants.
+        # Map public flag names to MT5 constants /
+        # แปลงชื่อ flags ที่รับจากภายนอกเป็นค่าคงที่ของ MT5
         flag_map = {
             "ALL": mt5.COPY_TICKS_ALL,
             "INFO": mt5.COPY_TICKS_INFO,
@@ -448,7 +543,8 @@ class MT5Handler:
         }
         mt5_flags = flag_map.get(flags.upper(), mt5.COPY_TICKS_ALL)
         
-        # Apply the reverse conversion from UTC to server time.
+        # Convert the requested UTC range back to server time /
+        # แปลงช่วงเวลาที่รับมาใน UTC กลับเป็นเวลา server ก่อนเรียก MT5
         if self.use_utc and self._server_offset_sec is None:
             self._update_server_offset(symbol)
         
@@ -466,17 +562,18 @@ class MT5Handler:
             logger.warning(f"No ticks returned for {symbol} in range {date_from} to {date_to}")
             return []
         
-        # Convert the NumPy array into a list of dictionaries.
+        # Convert the NumPy array into plain dictionaries /
+        # แปลงผลลัพธ์ NumPy array ให้อยู่ในรูป dictionary ปกติ
         result = []
         for tick in ticks:
             result.append({
                 "time": self._apply_time_correction(int(tick['time'])),
-                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision
+                "time_msc": int(tick['time_msc']),  # Timestamp with millisecond precision / timestamp ระดับมิลลิวินาที
                 "bid": float(tick['bid']),
                 "ask": float(tick['ask']),
                 "last": float(tick['last']),
                 "volume": int(tick['volume']),
-                "flags": int(tick['flags']),  # Tick change flags
+                "flags": int(tick['flags']),  # Tick change flags / สถานะการเปลี่ยนแปลงของ tick
             })
         
         return result
@@ -491,19 +588,23 @@ class MT5Handler:
     ) -> Optional[List[Dict]]:
         """
         Retrieve trading history deals using the same lookup modes as
-        MetaTrader5.history_deals_get / MetaTrader5.history_deals_get と同じ検索モードで履歴 deal を取得.
+                MetaTrader5.history_deals_get.
+                ดึงประวัติ deals โดยรองรับรูปแบบการค้นหาแบบเดียวกับ MetaTrader5.history_deals_get.
 
         Notes:
         - Direct ticket/position lookups may fail with some brokers or terminal builds.
         - When that happens, fall back to a wide range scan and filter locally.
-          / 一部の環境では ticket/position 直指定が失敗するため、広い期間検索へフォールバックする。
+                - ถ้าการค้นหาแบบ ticket/position โดยตรงล้มเหลว จะ fallback ไปสแกนช่วงกว้างแล้วค่อยกรองในเครื่อง.
         """
         if not self.connected:
             if not self.initialize():
                 return None
 
         def _range_query(start_dt: datetime, end_dt: datetime, group_filter: Optional[str] = None):
-            """Run a range-based MT5 history query / 期間指定の履歴検索を実行."""
+            """
+            Run a range-based MT5 history query.
+            เรียกค้นประวัติ MT5 แบบระบุช่วงเวลา.
+            """
             if group_filter:
                 return mt5.history_deals_get(start_dt, end_dt, group=group_filter)
             return mt5.history_deals_get(start_dt, end_dt)
@@ -512,7 +613,8 @@ class MT5Handler:
             """
             Some MT5 terminals reject direct lookup params with last_error=(-2, Invalid params).
             In that case, scan a wide history range and filter locally.
-            / 一部端末で Invalid params が返る場合、広い履歴を取得してローカルで絞り込む。
+            บาง terminal ของ MT5 จะปฏิเสธพารามิเตอร์ค้นหาแบบตรงด้วย last_error=(-2, Invalid params)
+            ในกรณีนั้นให้ดึงช่วงประวัติกว้าง ๆ แล้วกรองที่ฝั่ง local แทน.
             """
             fallback_from = datetime(2000, 1, 1, tzinfo=timezone.utc)
             fallback_to = datetime.now(timezone.utc)
@@ -522,7 +624,7 @@ class MT5Handler:
 
             if filter_kind == "ticket":
                 # Accept both deal ticket and order ticket for convenience /
-                # 利便性のため deal ticket と order ticket の両方を許容
+                # เพื่อความสะดวก ให้ยอมรับทั้ง deal ticket และ order ticket
                 return [
                     deal for deal in scanned
                     if int(getattr(deal, "ticket", 0)) == filter_value
@@ -538,7 +640,8 @@ class MT5Handler:
             return scanned
 
         try:
-            # Select exactly one query mode / 検索モードを一つに絞る
+            # Select exactly one query mode /
+            # บังคับให้เลือกโหมดค้นหาเพียงแบบเดียวในแต่ละครั้ง
             if ticket is not None:
                 ticket_value = int(ticket)
                 deals = mt5.history_deals_get(ticket=ticket_value)
@@ -565,7 +668,7 @@ class MT5Handler:
                     return None
 
                 # The group filter is only meaningful for range queries /
-                # group フィルタは期間検索時に使用する
+                # group filter ใช้เฉพาะตอนค้นหาตามช่วงเวลาเท่านั้น
                 deals = _range_query(date_from, date_to, group)
         except Exception as exc:
             logger.error(f"Failed to query history deals: {exc}")
@@ -578,8 +681,8 @@ class MT5Handler:
         if len(deals) == 0:
             return []
 
-        # Estimate the server offset from the first returned symbol when needed /
-        # 必要な場合は先頭シンボルからサーバー時差を推定する
+        # Estimate server offset from the first returned symbol when needed /
+        # หากจำเป็น ให้ประมาณค่า server offset จาก symbol แรกที่ได้กลับมา
         if self.use_utc and self._server_offset_sec is None:
             first_symbol = getattr(deals[0], "symbol", None)
             if first_symbol:
@@ -612,13 +715,14 @@ class MT5Handler:
             })
 
         # Return oldest -> newest for stable downstream processing /
-        # 下流処理の安定性のため古い順で返す
+        # คืนค่าจากเก่าไปใหม่เพื่อให้ downstream ประมวลผลได้สม่ำเสมอ
         result.sort(key=lambda item: (item["time"], item["time_msc"], item["ticket"]))
         return result
 
     def get_account_info(self) -> Optional[Dict]:
         """
         Get account information (balance, equity, etc.).
+        ดึงข้อมูลบัญชี เช่น balance, equity และค่า margin ต่าง ๆ.
         """
         if not self.connected:
             if not self.initialize():
@@ -648,6 +752,7 @@ class MT5Handler:
     ) -> Optional[List[Dict]]:
         """
         Get current open positions with optional filtering.
+        ดึงรายการ position ที่เปิดอยู่ โดยสามารถกรองเพิ่มเติมได้.
         
         Args:
             symbols: If provided, only return positions for these symbols.
@@ -655,6 +760,7 @@ class MT5Handler:
         
         Returns:
             List of position dictionaries, or None if failed.
+            คืนรายการ position แบบ dictionary หรือ None ถ้าล้มเหลว.
         """
         if not self.connected:
             if not self.initialize():
@@ -666,12 +772,14 @@ class MT5Handler:
             
         result = []
         for pos in positions:
-            # Apply the magic number filter.
+            # Apply the magic number filter /
+            # กรองตาม magic number เมื่อผู้ใช้ระบุมา
             pos_magic = int(getattr(pos, "magic", 0))
             if magic is not None and pos_magic != magic:
                 continue
             
-            # Apply the symbol filter.
+            # Apply the symbol filter /
+            # กรองตาม symbol เมื่อผู้ใช้ส่งรายการ symbol มา
             pos_symbol = pos.symbol
             if symbols is not None and pos_symbol not in symbols:
                 continue
@@ -682,8 +790,8 @@ class MT5Handler:
                 "type": "BUY" if pos.type == mt5.ORDER_TYPE_BUY else "SELL",
                 "volume": float(pos.volume),
                 "price_open": float(pos.price_open),
-                # Preserve the original comment so downstream clients can safely
-                # identify positions that belong to them.
+                # Preserve the original comment for downstream identification /
+                # เก็บ comment เดิมไว้เพื่อให้ระบบปลายทางใช้ระบุตำแหน่งของตัวเองได้
                 "comment": str(getattr(pos, "comment", "")),
                 "magic": pos_magic,
                 "sl": float(pos.sl),
@@ -708,6 +816,7 @@ class MT5Handler:
     ) -> tuple[Optional[int], Optional[str]]:
         """
         Send a market order.
+        ส่งคำสั่ง market order ไปยัง MT5.
         
         Args:
             symbol: Symbol to trade.
@@ -719,13 +828,15 @@ class MT5Handler:
             
         Returns:
             Order ticket if successful, None otherwise.
+            คืน order ticket เมื่อสำเร็จ หรือ None เมื่อไม่สำเร็จ.
         """
         if not self.connected:
             if not self.initialize():
                 message = "Failed to connect to MT5"
                 return None, message
                 
-        # Get the current price for the order request.
+        # Get the current price needed for the order request /
+        # ดึงราคาปัจจุบันเพื่อใช้ประกอบคำสั่งซื้อขาย
         tick = self.get_tick(symbol)
         if tick is None:
             message = f"Failed to get tick data for {symbol}"
@@ -744,19 +855,20 @@ class MT5Handler:
             "price": price,
             "sl": sl,
             "tp": tp,
-            "deviation": 20,  # Slippage tolerance
-            "magic": magic,   # Magic number
+            "deviation": 20,  # Slippage tolerance / ค่าความคลาดเคลื่อนที่ยอมรับได้
+            "magic": magic,   # Magic number / หมายเลขสำหรับแยกกลุ่มคำสั่ง
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
         }
 
-        # Only switch the filling mode when the failure is clearly caused by
-        # the filling policy. For example, Invalid stops (10016) will not be
-        # fixed by trying every filling option.
+        # Only switch filling mode when the failure clearly points to filling policy /
+        # เปลี่ยน filling mode เฉพาะเมื่อสาเหตุล้มเหลวเกี่ยวกับ filling policy จริง ๆ
+        # For example, Invalid stops will not be fixed by trying every filling option /
+        # เช่น Invalid stops จะไม่หายเพียงแค่ลอง filling mode ทุกแบบ
         invalid_fill_retcode = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
 
-        # Try the default request first, then retry with alternative filling
-        # modes only for Unsupported/Invalid filling style errors.
+        # Try the default request first, then retry alternative filling modes only when relevant /
+        # ลองคำสั่งแบบปกติก่อน แล้วค่อย fallback ไป filling mode อื่นเฉพาะกรณีที่เกี่ยวข้อง
         fillings = [
             None,
             mt5.ORDER_FILLING_IOC,
@@ -771,8 +883,8 @@ class MT5Handler:
             filling_label = "default" if filling is None else str(filling)
             result = mt5.order_send(request)
             if result is None:
-                # When result is None, the issue is often related to terminal or
-                # communication state, so changing filling mode usually will not help.
+                # When result is None, the problem is often terminal or transport related /
+                # ถ้า result เป็น None มักเป็นปัญหาจาก terminal หรือการสื่อสาร ไม่ใช่ filling mode
                 error_code = mt5.last_error()
                 last_error = f"order_send returned None with filling={filling_label} (error={error_code}). Request: {request}"
                 logger.error(last_error)
@@ -783,8 +895,10 @@ class MT5Handler:
             last_error = f"filling={filling_label} failed with retcode {result.retcode}: {result.comment}"
             logger.warning("Order send failed: %s", last_error)
 
-            # Only try the next filling mode for Unsupported/Invalid filling errors.
-            # For other failures, such as Invalid stops, stop immediately and return.
+            # Retry the next filling mode only for unsupported or invalid filling errors /
+            # ลอง filling mode ถัดไปเฉพาะกรณี unsupported หรือ invalid filling เท่านั้น
+            # For other failures, stop immediately and return /
+            # หากเป็นความผิดพลาดชนิดอื่นให้หยุดและคืนผลทันที
             if int(result.retcode) == int(invalid_fill_retcode) or "filling" in str(result.comment).lower():
                 continue
             break
@@ -795,12 +909,14 @@ class MT5Handler:
         """
         Close an existing position.
         Returns: (success, message)
+        ปิด position ที่เปิดอยู่ และคืนค่าเป็น (success, message).
         """
         if not self.connected:
             if not self.initialize():
                 return False, "Failed to connect to MT5"
                 
-        # Get position details to know volume and symbol
+        # Read position details first so the close order can mirror symbol and volume /
+        # อ่านรายละเอียด position ก่อน เพื่อใช้ symbol และ volume เดิมตอนปิดคำสั่ง
         positions = mt5.positions_get(ticket=ticket)
         if positions is None or len(positions) == 0:
             logger.error(f"Position {ticket} not found")
@@ -810,10 +926,12 @@ class MT5Handler:
         symbol = pos.symbol
         volume = pos.volume
         
-        # Determine opposite type
+        # Use the opposite side to close the position /
+        # ใช้ฝั่งตรงข้ามกับ position เดิมเพื่อปิดคำสั่ง
         order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
         
-        # Get current price
+        # Get the current executable price for the close request /
+        # ดึงราคาปัจจุบันที่ใช้ส่งคำสั่งปิดได้จริง
         tick = self.get_tick(symbol)
         if tick is None:
             return False, f"Failed to get tick for {symbol}"
@@ -833,7 +951,8 @@ class MT5Handler:
             "type_time": mt5.ORDER_TIME_GTC,
         }
 
-        # Only switch the filling mode when the failure is caused by the filling policy.
+        # Only switch filling mode when the failure is caused by filling policy /
+        # เปลี่ยน filling mode เฉพาะเมื่อความล้มเหลวเกิดจาก filling policy
         invalid_fill_retcode = getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030)
 
         fillings = [
@@ -860,8 +979,10 @@ class MT5Handler:
             last_error = f"filling={filling_label} failed with retcode {result.retcode}: {result.comment}"
             logger.warning("Close position failed: %s", last_error)
 
-            # Only try the next filling mode for Unsupported/Invalid filling errors.
-            # For other failures, such as Invalid stops, stop immediately and return.
+            # Retry the next filling mode only for unsupported or invalid filling errors /
+            # ลอง filling mode ถัดไปเฉพาะกรณี unsupported หรือ invalid filling เท่านั้น
+            # For other failures, stop immediately and return /
+            # หากเป็นความผิดพลาดชนิดอื่นให้หยุดและคืนผลทันที
             if int(result.retcode) == int(invalid_fill_retcode) or "filling" in str(result.comment).lower():
                 continue
             break
@@ -870,7 +991,10 @@ class MT5Handler:
         return False, message
 
     def modify_position(self, ticket: int, sl: Optional[float], tp: Optional[float], update_sl: bool, update_tp: bool) -> tuple[bool, str]:
-        """Adjust stop loss / take profit for an existing position."""
+        """
+        Adjust stop loss / take profit for an existing position.
+        ปรับ stop loss และ take profit ของ position ที่มีอยู่.
+        """
 
         if not update_sl and not update_tp:
             return False, "Nothing to update"
@@ -925,25 +1049,30 @@ class MT5Handler:
         """
         Get market depth (Level 2) data for a symbol.
         Automatically handles subscription.
+        ดึงข้อมูล market depth (Level 2) ของ symbol และจัดการ subscription ให้อัตโนมัติ.
         """
         if not self.connected:
             if not self.initialize():
                 return None
 
-        # Ensure symbol is selected
+        # Ensure the symbol is selected before subscribing to market book /
+        # เลือก symbol ให้พร้อมก่อนสมัครรับ market book
         if not mt5.symbol_select(symbol, True):
             logger.error(f"Failed to select symbol {symbol}")
             return None
 
-        # Subscribe to market book (must be done to use MarketBookGet)
+        # Subscribe to market book before calling MarketBookGet /
+        # ต้อง subscribe market book ก่อนจึงจะเรียก MarketBookGet ได้
         if not mt5.market_book_add(symbol):
             logger.error(f"Failed to subscribe to market book for {symbol}: {mt5.last_error()}")
             return None
 
-        # Retrieve the book
+        # Retrieve the market book snapshot /
+        # ดึง snapshot ของ market book ปัจจุบัน
         items = mt5.market_book_get(symbol)
         if items is None:
-            # Note: Sometimes it returns None if the book is not yet populated
+            # Note: the terminal may return None before the order book is populated /
+            # หมายเหตุ: terminal อาจคืน None ได้ถ้า order book ยังไม่พร้อม
             return []
 
         result = []
@@ -955,7 +1084,7 @@ class MT5Handler:
                         "SELL_LIMIT" if item.type == mt5.BOOK_TYPE_SELL_LIMIT else "OTHER",
                 "price": float(item.price),
                 "volume": float(item.volume),
-                #"volume_real": float(item.volume_real)
+                # "volume_real": float(item.volume_real)  # Optional raw volume field / field ปริมาณแบบ raw ที่เปิดใช้ได้ถ้าต้องการ
                 "volume_dbl": float(item.volume_dbl)
             })
         

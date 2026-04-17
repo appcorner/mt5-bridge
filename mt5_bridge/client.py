@@ -19,6 +19,7 @@ class BridgeClient:
     def get_rates_range(self, symbol: str, timeframe: str, start: int, end: int) -> List[Dict[str, Any]]:
         """
         Retrieve historical rates for a specified date range.
+        ดึง historical rates ตามช่วงวันที่ที่กำหนด.
 
         Args:
             symbol: Symbol name, for example "XAUUSD"
@@ -28,6 +29,7 @@ class BridgeClient:
 
         Returns:
             A list of rate data dictionaries
+            คืนรายการข้อมูลราคาในรูป dictionary
         """
         url = f"{self.base_url}/rates_range/{symbol}"
         params = {"timeframe": timeframe, "start": start, "end": end}
@@ -48,6 +50,7 @@ class BridgeClient:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve historical tick data starting from the specified datetime.
+        ดึง historical tick โดยเริ่มจากเวลาที่ระบุ.
 
         Args:
             symbol: Symbol name, for example "XAUUSD"
@@ -57,11 +60,13 @@ class BridgeClient:
 
         Returns:
             A list of tick data dictionaries
+            คืนรายการข้อมูล tick ในรูป dictionary
         """
         url = f"{self.base_url}/ticks_from/{symbol}"
         params = {"start": start, "count": count, "flags": flags}
         try:
-            # Use a longer timeout because tick responses can be large.
+            # Use a longer timeout because tick payloads can be large /
+            # ใช้ timeout ที่นานขึ้นเพราะข้อมูล tick อาจมีขนาดใหญ่
             resp = httpx.get(url, params=params, timeout=60.0)
             resp.raise_for_status()
             return resp.json()
@@ -78,6 +83,7 @@ class BridgeClient:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve historical tick data within the specified datetime range.
+        ดึง historical tick ภายในช่วงเวลาที่กำหนด.
 
         Args:
             symbol: Symbol name, for example "XAUUSD"
@@ -87,11 +93,13 @@ class BridgeClient:
 
         Returns:
             A list of tick data dictionaries
+            คืนรายการข้อมูล tick ในรูป dictionary
         """
         url = f"{self.base_url}/ticks_range/{symbol}"
         params = {"start": start, "end": end, "flags": flags}
         try:
-            # Use a longer timeout because tick responses can be large.
+            # Use a longer timeout because tick payloads can be large /
+            # ใช้ timeout ที่นานขึ้นเพราะข้อมูล tick อาจมีขนาดใหญ่
             resp = httpx.get(url, params=params, timeout=120.0)
             resp.raise_for_status()
             return resp.json()
@@ -119,12 +127,13 @@ class BridgeClient:
     ) -> List[Dict[str, Any]]:
         """
         Retrieve MT5 history deals by date range, order ticket, or position ticket.
-        MT5 の history deals を期間・注文 ticket・position ticket で取得する.
+        ดึง MT5 history deals ด้วยช่วงเวลา, order ticket หรือ position ticket.
         """
         url = f"{self.base_url}/history/deals"
         params: Dict[str, Any] = {}
 
-        # Only include non-empty filters / 空でないフィルタだけを送信
+        # Only send filters that actually have values /
+        # ส่งเฉพาะ filter ที่มีค่าจริงเท่านั้น
         if start is not None:
             params["start"] = start
         if end is not None:
@@ -145,7 +154,10 @@ class BridgeClient:
             return []
 
     def get_book(self, symbol: str) -> List[Dict[str, Any]]:
-        """Get current market depth (Level 2)."""
+        """
+        Get current market depth (Level 2).
+        ดึงข้อมูล market depth ปัจจุบันแบบ Level 2.
+        """
         url = f"{self.base_url}/book/{symbol}"
         try:
             resp = httpx.get(url, timeout=5.0)

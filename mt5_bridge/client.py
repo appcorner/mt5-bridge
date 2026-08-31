@@ -1,3 +1,4 @@
+import urllib.parse
 import httpx
 from typing import List, Dict, Optional, Any
 
@@ -6,7 +7,7 @@ class BridgeClient:
         self.base_url = base_url.rstrip("/")
 
     def get_rates(self, symbol: str, timeframe: str = "M1", count: int = 1000) -> List[Dict[str, Any]]:
-        url = f"{self.base_url}/rates/{symbol}"
+        url = f"{self.base_url}/rates/{urllib.parse.quote(symbol, safe='')}"
         params = {"timeframe": timeframe, "count": count}
         try:
             resp = httpx.get(url, params=params, timeout=10.0)
@@ -31,7 +32,7 @@ class BridgeClient:
             A list of rate data dictionaries
             คืนรายการข้อมูลราคาในรูป dictionary
         """
-        url = f"{self.base_url}/rates_range/{symbol}"
+        url = f"{self.base_url}/rates_range/{urllib.parse.quote(symbol, safe='')}"
         params = {"timeframe": timeframe, "start": start, "end": end}
         try:
             resp = httpx.get(url, params=params, timeout=30.0)
@@ -62,7 +63,7 @@ class BridgeClient:
             A list of tick data dictionaries
             คืนรายการข้อมูล tick ในรูป dictionary
         """
-        url = f"{self.base_url}/ticks_from/{symbol}"
+        url = f"{self.base_url}/ticks_from/{urllib.parse.quote(symbol, safe='')}"
         params = {"start": start, "count": count, "flags": flags}
         try:
             # Use a longer timeout because tick payloads can be large /
@@ -95,7 +96,7 @@ class BridgeClient:
             A list of tick data dictionaries
             คืนรายการข้อมูล tick ในรูป dictionary
         """
-        url = f"{self.base_url}/ticks_range/{symbol}"
+        url = f"{self.base_url}/ticks_range/{urllib.parse.quote(symbol, safe='')}"
         params = {"start": start, "end": end, "flags": flags}
         try:
             # Use a longer timeout because tick payloads can be large /
@@ -108,7 +109,7 @@ class BridgeClient:
             return []
 
     def get_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
-        url = f"{self.base_url}/tick/{symbol}"
+        url = f"{self.base_url}/tick/{urllib.parse.quote(symbol, safe='')}"
         try:
             resp = httpx.get(url, timeout=5.0)
             resp.raise_for_status()
@@ -158,7 +159,7 @@ class BridgeClient:
         Get current market depth (Level 2).
         ดึงข้อมูล market depth ปัจจุบันแบบ Level 2.
         """
-        url = f"{self.base_url}/book/{symbol}"
+        url = f"{self.base_url}/book/{urllib.parse.quote(symbol, safe='')}"
         try:
             resp = httpx.get(url, timeout=5.0)
             resp.raise_for_status()
@@ -193,6 +194,17 @@ class BridgeClient:
             print(f"Error fetching positions: {e}")
             return []
     
+    def get_symbols(self) -> List[str]:
+        """Get list of all available symbols."""
+        url = f"{self.base_url}/symbols"
+        try:
+            resp = httpx.get(url, timeout=5.0)
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as e:
+            print(f"Error fetching symbols: {e}")
+            return []
+    
     def check_health(self) -> Dict[str, Any]:
         url = f"{self.base_url}/health"
         try:
@@ -201,6 +213,21 @@ class BridgeClient:
             return resp.json()
         except httpx.HTTPError as e:
             return {"status": "error", "detail": str(e)}
+
+    def get_version(self) -> Dict[str, Any]:
+        """
+        現在稼働中の mt5-bridge サーバーのバージョンを取得します。
+
+        Returns:
+            バージョン情報を含む辞書
+        """
+        url = f"{self.base_url}/version"
+        try:
+            resp = httpx.get(url, timeout=5.0)
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as e:
+            return {"version": "unknown", "detail": str(e)}
 
     def send_order(self, symbol: str, order_type: str, volume: float, sl: float = 0.0, tp: float = 0.0, comment: str = "", magic: int = 123456) -> Dict[str, Any]:
         url = f"{self.base_url}/order"
@@ -245,3 +272,4 @@ class BridgeClient:
             return resp.json()
         except httpx.HTTPError as e:
             return {"status": "error", "detail": str(e)}
+

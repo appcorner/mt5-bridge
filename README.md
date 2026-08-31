@@ -65,6 +65,9 @@ From another machine (or the same one), use the client command to interact with 
 # Check connection health
 uv run mt5-bridge client --url http://192.168.1.10:8000 health
 
+# Get server version
+uv run mt5-bridge client --url http://192.168.1.10:8000 version
+
 # Get historical rates (M1, last 1000 bars) for XAUUSD
 uv run mt5-bridge client --url http://192.168.1.10:8000 rates XAUUSD
 
@@ -113,6 +116,7 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 modify 12345678 --sl 200
 You can also access the API directly via generic HTTP clients (curl, Postman, specific libraries).
 
 - `GET /health`
+- `GET /version` (**v1.8.1+**)
 - `GET /rates/{symbol}?timeframe=M1&count=1000`
 - `GET /rates_range/{symbol}?timeframe=M1&start=2026-01-01&end=2026-01-15`
 - `GET /tick/{symbol}`
@@ -121,7 +125,7 @@ You can also access the API directly via generic HTTP clients (curl, Postman, sp
 - `GET /ticks_range/{symbol}?start=2026-01-01&end=2026-01-02&flags=ALL` (**v1.5.0+**)
 - `GET /account`
 - `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456` (**v1.7.0+** now includes `time_msc`)
-- `GET /history/deals?start=2026-01-01&end=2026-01-31&group=*USD*` or `GET /history/deals?ticket=123456789` or `GET /history/deals?position=987654321`
+- `GET /history/deals?start=2026-01-01&end=2026-01-31&group=*USD*` or `GET /history/deals?ticket=123456789` or `GET /history/deals?position=987654321` (**v1.8.0+**)
 - `POST /order`
 - `POST /close`
 - `POST /modify`

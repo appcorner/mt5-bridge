@@ -53,6 +53,12 @@ uv run mt5-bridge server --host 0.0.0.0 --port 8000
 # サーバーのヘルスチェック
 uv run mt5-bridge client --url http://192.168.1.10:8000 health
 
+# サーバーのバージョン取得
+uv run mt5-bridge client --url http://192.168.1.10:8000 version
+
+# 利用可能なシンボル一覧の取得
+uv run mt5-bridge client --url http://192.168.1.10:8000 symbols
+
 # 過去レートの取得 (M1, 最新1000本) - シンボル: XAUUSD
 uv run mt5-bridge client --url http://192.168.1.10:8000 rates XAUUSD
 
@@ -67,6 +73,9 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 account
 
 # 保有ポジションの一覧表示 (オプション: --symbols XAUUSD,BTCUSD --magic 123456)
 uv run mt5-bridge client --url http://192.168.1.10:8000 positions
+
+# 取引履歴（約定履歴）の取得 (オプション: --position 123456 --ticket 789012 --start 2025-01-01 --end 2025-01-02)
+uv run mt5-bridge client --url http://192.168.1.10:8000 history_deals
 
 # 指定期間のレート取得 (タイムスタンプまたは日時文字列)
 uv run mt5-bridge client --url http://192.168.1.10:8000 rates_range XAUUSD --timeframe M1 --start 2025-01-01 --end 2025-01-02
@@ -92,6 +101,8 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 modify 12345678 --sl 200
 汎用的なHTTPクライアントやライブラリから直接APIを利用することも可能です。
 
 - `GET /health`
+- `GET /version` (**v1.8.1~**)
+- `GET /symbols` (**v1.7.2~**)
 - `GET /rates/{symbol}?timeframe=M1&count=1000`
 - `GET /rates_range/{symbol}?timeframe=M1&start=2025-01-01&end=2025-01-02`
 - `GET /tick/{symbol}`
@@ -100,6 +111,7 @@ uv run mt5-bridge client --url http://192.168.1.10:8000 modify 12345678 --sl 200
 - `GET /ticks_range/{symbol}?start=2025-01-01&end=2025-01-02&flags=ALL` (**v1.5.0~**)
 - `GET /account`
 - `GET /positions?symbols=XAUUSD,BTCUSD&magic=123456` (**v1.7.0~** で `time_msc` を追加)
+- `GET /history/deals?position=123456&ticket=789012&start=2025-01-01&end=2025-01-02` (**v1.8.0~**)
 - `POST /order`
 - `POST /close`
 - `POST /modify`

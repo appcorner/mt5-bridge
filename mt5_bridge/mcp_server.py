@@ -54,6 +54,12 @@ def health() -> Dict[str, Any]:
 
 
 @mcp.tool()
+def get_version() -> Dict[str, Any]:
+    """Get MT5 Bridge version / ブリッジのバージョンを確認"""
+    return _request("GET", "/version")
+
+
+@mcp.tool()
 def get_rates(symbol: str, timeframe: str = "M1", count: int = 100) -> List[Dict[str, Any]]:
     """
     Fetch OHLCV bars.
@@ -146,7 +152,6 @@ def modify_position(
     """
     payload = {"ticket": ticket, "sl": sl, "tp": tp, "update_sl": update_sl, "update_tp": update_tp}
     return _request("POST", "/modify", json=payload)
-
 
 
 if __name__ == "__main__":

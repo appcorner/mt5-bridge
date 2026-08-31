@@ -16,7 +16,7 @@ else:
     mt5 = None
 
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 from typing import Optional, Dict, List, Union
 
@@ -29,7 +29,8 @@ class MT5Handler:
         login: Optional[int] = None,
         password: Optional[str] = None,
         server: Optional[str] = None,
-        use_utc: bool = True
+        use_utc: bool = True,
+        offset_ttl_hours: float = 6.0
     ):
         self.connected = False
         self.program_path = program_path
@@ -38,6 +39,10 @@ class MT5Handler:
         self.server = server
         self.use_utc = use_utc
         self._server_offset_sec: Optional[int] = None
+        # offsetキャッシュのTTL管理(長期間起動で古いoffsetが使われ続け、
+        # 夏時間切り替えやMT5端末再接続後のサーバー時刻変動に追従できなくなる問題の対策)
+        self._offset_updated_at: Optional[datetime] = None
+        self._offset_ttl_sec: float = offset_ttl_hours * 3600.0
 
     def initialize(self) -> bool:
         """
@@ -108,8 +113,11 @@ class MT5Handler:
         ประมาณค่า timezone offset ของ server เทียบกับ UTC จากเวลา tick ของ symbol ที่ระบุ.
         ค่า offset คำนวณจาก ServerTime - UTC.
         """
-        if self._server_offset_sec is not None:
-            return
+        if self._server_offset_sec is not None and self._offset_updated_at is not None:
+            # TTL内ならキャッシュ使用。TTL超過で再計算(古いoffsetの永続キャッシュ問題を回避)。
+            if datetime.now(timezone.utc) - self._offset_updated_at < timedelta(seconds=self._offset_ttl_sec):
+                return
+            logger.info("Server timezone offset cache expired (TTL=%ds), recalculating...", int(self._offset_ttl_sec))
 
         # Ensure symbol is selected to get fresh tick /
         # เลือก symbol ไว้ก่อนเพื่อเพิ่มโอกาสได้ tick ล่าสุด
@@ -141,6 +149,7 @@ class MT5Handler:
         # ปัดเป็นช่วงละ 15 นาทีเพื่อลดผลกระทบจาก latency และเวลาปิดแท่ง
         rounded_diff = round(diff / 900) * 900
         self._server_offset_sec = int(rounded_diff)
+        self._offset_updated_at = datetime.now(timezone.utc)
         logger.info(f"Server timezone offset estimated: {self._server_offset_sec}s (using {symbol}, raw_diff={diff:.1f}s)")
 
     def _apply_time_correction(self, ts: int) -> int:
@@ -481,7 +490,7 @@ class MT5Handler:
             self._update_server_offset(symbol)
         
         offset = self._server_offset_sec or 0
-        server_from = datetime.fromtimestamp(date_from.timestamp() + offset, tz=timezone.utc)
+        server_from = datetime.fromtimestamp(date_from.timestamp() + offset)
         
         ticks = mt5.copy_ticks_from(symbol, server_from, count, mt5_flags)
         
@@ -549,8 +558,8 @@ class MT5Handler:
             self._update_server_offset(symbol)
         
         offset = self._server_offset_sec or 0
-        server_from = datetime.fromtimestamp(date_from.timestamp() + offset, tz=timezone.utc)
-        server_to = datetime.fromtimestamp(date_to.timestamp() + offset, tz=timezone.utc)
+        server_from = datetime.fromtimestamp(date_from.timestamp() + offset)
+        server_to = datetime.fromtimestamp(date_to.timestamp() + offset)
         
         ticks = mt5.copy_ticks_range(symbol, server_from, server_to, mt5_flags)
         
@@ -1089,3 +1098,13 @@ class MT5Handler:
             })
         
         return result
+
+    def get_symbols(self) -> List[str]:
+        """Get list of all available symbols in the terminal."""
+        if not self.connected:
+            self.initialize()
+        
+        symbols = mt5.symbols_get()
+        if symbols is None:
+            return []
+        return [s.name for s in symbols]
